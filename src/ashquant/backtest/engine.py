@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from ashquant import config as cfg_mod
-from ashquant.backtest import metrics as metrics_mod
+from ashquant.backtest.metrics import performance, prediction_stats, win_rate
 from ashquant.backtest.rules import DEFERRED, FILLED, MarketRules
 from ashquant.indicators import add_indicators
 from ashquant.masters import compute_master_series
@@ -251,9 +251,9 @@ def run_backtest(
             bench = bclose / float(bclose.iloc[0]) * bcfg.initial_cash
 
     pred_df = pd.DataFrame(pred_rows)
-    m = metrics_mod.performance(equity, bcfg.initial_cash)
-    m.update(metrics_mod.prediction_stats(pred_df))
-    m["win_rate"] = metrics_mod.win_rate(trades)
+    m = performance(equity, bcfg.initial_cash)
+    m.update(prediction_stats(pred_df))
+    m["win_rate"] = win_rate(trades)
 
     if compute_cost_sensitivity and bcfg.fee_enabled:
         bcfg_nofee = dataclasses.replace(bcfg, fee_enabled=False)
