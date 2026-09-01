@@ -79,14 +79,15 @@ class PaperBroker:
         return {"cash": round(st["cash"], 2), "positions": positions,
                 "market_value": round(mkt, 2), "equity": round(st["cash"] + mkt, 2)}
 
-    def buy(self, symbol: str, qty: int, price: float, name: str = "") -> dict:
+    def buy(self, symbol: str, qty: int, price: float, name: str = "",
+            prev_close: float | None = None) -> dict:
         symbol = normalize_symbol(symbol)
         st = self._load()
         today = date.today().isoformat()
         self._rollover_date(st, today)
+        pc = float(prev_close if prev_close is not None else price)
         res = self.rules.buy(symbol, is_st_name(name), today, float(price),
-                             float(price), int(qty), st["cash"])
-        # 实时快照价作为撮合价：以最新价与昨收同一价传入（快照级撮合的文档化近似）
+                             pc, int(qty), st["cash"])
         if res.status != FILLED:
             raise PaperError(f"买入被拒: {res.note}")
         amount = round(res.price * res.qty, 2)

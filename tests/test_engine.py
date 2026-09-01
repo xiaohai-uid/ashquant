@@ -27,6 +27,9 @@ def test_engine_determinism_and_metrics():
     assert "max_drawdown" in m
     assert "sharpe" in m
     assert "pred_total" in m
+    assert "cost_sensitivity" in m
+    assert "fee_drag" in m["cost_sensitivity"]
+    assert "zero_fee_total_ret" in m["cost_sensitivity"]
 
     # 预测日志对账存在
     assert len(rpt1.prediction_log) > 0

@@ -69,6 +69,15 @@ def predict_next_day(store, symbol: str, cfg: cfg_mod.Config | None = None,
             f"|P(涨)-0.5| = {abs(p - 0.5):.3f} < 弃权阈值 {sc.neutral_band}，无把握，不给出方向"
         )
     if log:
+        features_snapshot = {
+            "close": round(float(bars["close"].iloc[-1]), 2),
+            "rsi14": round(float(ind["rsi14"].iloc[-1]), 2) if pd.notna(ind["rsi14"].iloc[-1]) else None,
+            "roc10": round(float(ind["roc10"].iloc[-1]), 4) if pd.notna(ind["roc10"].iloc[-1]) else None,
+            "vol_ratio": round(float(ind["vol_ratio"].iloc[-1]), 2) if pd.notna(ind["vol_ratio"].iloc[-1]) else None,
+            "score": result["score"],
+        }
+        signals_summary = {s["master"]: s["score"] for s in result["signals"]}
+
         entry = {
             "id": uuid.uuid4().hex[:12],
             "symbol": symbol,
@@ -77,6 +86,8 @@ def predict_next_day(store, symbol: str, cfg: cfg_mod.Config | None = None,
             "prob_up": result["prob_up"],
             "confidence": result["confidence"],
             "method": result["method"],
+            "features_snapshot": features_snapshot,
+            "signals_summary": signals_summary,
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "actual_ret": None,
             "hit": None,

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -69,6 +70,7 @@ def run_backtest(
     bcfg: BacktestConfig | None = None,
     benchmark_df: pd.DataFrame | None = None,
     st_symbols: set[str] | None = None,
+    compute_cost_sensitivity: bool = True,
 ) -> BacktestReport:
     bcfg = bcfg or BacktestConfig()
     syms = sorted(set(symbols))
@@ -252,7 +254,23 @@ def run_backtest(
     m = metrics_mod.performance(equity, bcfg.initial_cash)
     m.update(metrics_mod.prediction_stats(pred_df))
     m["win_rate"] = metrics_mod.win_rate(trades)
-    m["cost_sensitivity"] = {"fee_enabled": bcfg.fee_enabled}  # 零成本对照由调用方再次运行填充
+
+    if compute_cost_sensitivity and bcfg.fee_enabled:
+        bcfg_nofee = dataclasses.replace(bcfg, fee_enabled=False)
+        rpt_nofee = run_backtest(
+            symbols=symbols, loader=loader, bcfg=bcfg_nofee,
+            benchmark_df=benchmark_df, st_symbols=st_symbols,
+            compute_cost_sensitivity=False,
+        )
+        zero_fee_ret = rpt_nofee.metrics["total_return"]
+        with_fee_ret = m["total_return"]
+        m["cost_sensitivity"] = {
+            "with_fee_total_ret": with_fee_ret,
+            "zero_fee_total_ret": zero_fee_ret,
+            "fee_drag": round(zero_fee_ret - with_fee_ret, 6),
+        }
+    else:
+        m["cost_sensitivity"] = {"fee_enabled": bcfg.fee_enabled}
 
     return BacktestReport(
         config=bcfg, equity_curve=equity, benchmark_curve=bench, trades=trades,

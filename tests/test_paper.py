@@ -38,3 +38,14 @@ def test_paper_broker_lifecycle(tmp_path: Path):
     out = broker.export(csv_file)
     assert out.exists()
     assert len(out.read_text(encoding="utf-8-sig").splitlines()) == 3  # 表头 + 1买 + 1卖
+
+
+def test_paper_broker_limit_up_rejected(tmp_path: Path):
+    cfg = cfg_mod.Config(data_dir=tmp_path)
+    broker = PaperBroker(cfg)
+    broker.init(100_000.0)
+
+    # 昨收 10.00，现价 11.00（涨停） -> 应当拒绝买入
+    with pytest.raises(PaperError) as exc:
+        broker.buy("600519", 100, price=11.00, prev_close=10.00)
+    assert "LIMIT_UP" in str(exc.value)

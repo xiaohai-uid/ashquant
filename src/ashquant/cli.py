@@ -197,6 +197,7 @@ def backtest(
     end: Annotated[str | None, typer.Option("--end", help="止日 YYYY-MM-DD")] = None,
     topk: Annotated[int, typer.Option("--topk", "-k", help="持仓只数")] = 5,
     rebalance: Annotated[int, typer.Option("--rebalance", "-r", help="调仓周期（交易日）")] = 5,
+    max_weight: Annotated[float, typer.Option("--max-weight", "-w", help="单票仓位上限（默认 0.2）")] = 0.2,
     fee: Annotated[bool, typer.Option("--fee/--no-fee", help="是否计入佣金/印花税/过户费")] = True,
     data_dir: Annotated[str | None, typer.Option("--data-dir", help="数据目录")] = None,
     out: Annotated[str | None, typer.Option("--out", "-o", help="结果保存路径 (JSON)")] = None,
@@ -209,7 +210,7 @@ def backtest(
 
     bcfg = BacktestConfig(
         start=start, end=end, topk=topk, rebalance_days=rebalance,
-        fee_enabled=fee,
+        max_weight=max_weight, fee_enabled=fee,
     )
 
     try:
@@ -218,20 +219,7 @@ def backtest(
         err_console.print(f"[red]回测失败:[/red] {e}")
         raise typer.Exit(2)
 
-    # 零成本敏感性对照（若开启了费用，再跑一次无费用作比对）
-    cost_diff = None
-    if fee:
-        try:
-            bcfg_nofee = BacktestConfig(start=start, end=end, topk=topk, rebalance_days=rebalance, fee_enabled=False)
-            rpt_nofee = run_backtest(sym_list, loader=st.load_bars, bcfg=bcfg_nofee, benchmark_df=bench_df)
-            cost_diff = {
-                "with_fee_total_ret": rpt.metrics["total_return"],
-                "zero_fee_total_ret": rpt_nofee.metrics["total_return"],
-                "fee_drag": round(rpt_nofee.metrics["total_return"] - rpt.metrics["total_return"], 6),
-            }
-            rpt.metrics["cost_sensitivity"] = cost_diff
-        except Exception:
-            pass
+    cost_diff = rpt.metrics.get("cost_sensitivity") if fee else None
 
     # 保存报告文件
     out_path = Path(out) if out else (Path("results") / f"backtest_{date.today().strftime('%Y%m%d_%H%M%S')}.json")
@@ -487,11 +475,13 @@ def paper_buy(
     broker = PaperBroker(cfg)
 
     px = price
+    pc = None
     name = ""
     if px is None:
         try:
             q = snapshot([sym])[0]
             px = q.price
+            pc = q.prev_close
             name = q.name or ""
         except Exception as e:
             err_console.print(f"[red]获取 {sym} 实时价失败:[/red] {e}")
@@ -502,7 +492,7 @@ def paper_buy(
         raise typer.Exit(2)
 
     try:
-        res = broker.buy(sym, qty, px, name=name)
+        res = broker.buy(sym, qty, px, name=name, prev_close=pc)
     except PaperError as e:
         err_console.print(f"[yellow]{e}[/yellow]")
         raise typer.Exit(4)

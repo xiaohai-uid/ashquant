@@ -132,6 +132,9 @@
     let chart = null;
     let candleSeries = null;
     let volumeSeries = null;
+    let ma5Series = null;
+    let ma20Series = null;
+    let ma60Series = null;
 
     function initChart() {
       const container = document.getElementById("chart-container");
@@ -148,6 +151,10 @@
         borderUpColor: "#ef4444", borderDownColor: "#22c55e",
         wickUpColor: "#ef4444", wickDownColor: "#22c55e",
       });
+
+      ma5Series = chart.addLineSeries({ color: "#fbbf24", lineWidth: 1, title: "MA5" });
+      ma20Series = chart.addLineSeries({ color: "#38bdf8", lineWidth: 1, title: "MA20" });
+      ma60Series = chart.addLineSeries({ color: "#c084fc", lineWidth: 1, title: "MA60" });
 
       volumeSeries = chart.addHistogramSeries({
         color: "#38bdf840",
@@ -221,6 +228,14 @@
 
         candleSeries.setData(candleData);
         volumeSeries.setData(volData);
+
+        const ma5Data = data.bars.filter(b => b.ma5 != null).map(b => ({ time: b.time, value: b.ma5 }));
+        const ma20Data = data.bars.filter(b => b.ma20 != null).map(b => ({ time: b.time, value: b.ma20 }));
+        const ma60Data = data.bars.filter(b => b.ma60 != null).map(b => ({ time: b.time, value: b.ma60 }));
+        ma5Series.setData(ma5Data);
+        ma20Series.setData(ma20Data);
+        ma60Series.setData(ma60Data);
+
         chart.timeScale().fitContent();
       } catch (e) {
         console.error("K线加载错误:", e);

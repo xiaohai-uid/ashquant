@@ -112,15 +112,17 @@ def create_app(data_dir: str | None = None) -> FastAPI:
     def api_paper_buy(req: PaperOrderReq):
         sym = codes.normalize_symbol(req.symbol)
         px = req.price
+        pc = None
         name = ""
         if px is None:
             q = snapshot([sym])[0]
             px = q.price
+            pc = q.prev_close
             name = q.name or ""
         if px is None:
             raise HTTPException(status_code=400, detail="无法获取有效报价")
         try:
-            res = paper.buy(sym, req.qty, px, name=name)
+            res = paper.buy(sym, req.qty, px, name=name, prev_close=pc)
             return {"ok": True, "result": res}
         except PaperError as e:
             return {"ok": False, "reason": str(e)}
