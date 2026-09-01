@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ashquant A股量化控制台</title>
+  <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --text-dim: #94a3b8;
+      --up: #ef4444;
+      --down: #22c55e;
+      --accent: #38bdf8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 16px; font-size: 14px; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 16px; }
+    h1 { font-size: 20px; font-weight: 700; color: var(--accent); }
+    .status-badge { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: #334155; color: #cbd5e1; }
+    .grid { display: grid; grid-template-columns: 360px 1fr; gap: 16px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+    .card-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th, td { padding: 8px 6px; border-bottom: 1px solid #334155; }
+    th { color: var(--text-dim); font-size: 12px; }
+    tr.clickable { cursor: pointer; transition: background 0.15s; }
+    tr.clickable:hover { background: #334155; }
+    tr.selected { background: #3b82f620; border-left: 3px solid var(--accent); }
+    .up { color: var(--up); font-weight: 600; }
+    .down { color: var(--down); font-weight: 600; }
+    .btn { background: var(--accent); color: #000; border: none; padding: 6px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; font-size: 12px; }
+    .btn:hover { opacity: 0.9; }
+    .input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    input { background: #0f172a; border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 4px; flex: 1; }
+    #chart-container { height: 420px; width: 100%; }
+    .signals-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 12px; }
+    .signal-card { background: #0f172a; border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+    .signal-master { font-weight: 600; display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .signal-reason { color: var(--text-dim); font-size: 12px; margin-bottom: 6px; }
+    .signal-quote { font-style: italic; font-size: 11px; color: #64748b; border-left: 2px solid var(--accent); padding-left: 6px; }
+    footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-dim); text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>ashquant · A股量化交易控制台</h1>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:2px;">诚实指标 · 规则保真 · 投资大师信号代理</div>
+    </div>
+    <div id="market-status" class="status-badge">正在连接...</div>
+  </header>
+
+  <div class="grid">
+    <!-- 左栏: 自选股快照与模拟盘 -->
+    <div>
+      <div class="card">
+        <div class="card-title">
+          <span>自选股行情 (5s 轮询)</span>
+        </div>
+        <div class="input-row">
+          <input type="text" id="symbols-input" value="600519,000001,300750,688981,601318" placeholder="股票代码，逗号分隔">
+          <button class="btn" onclick="fetchSpot()">刷新</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>代码</th>
+              <th>名称</th>
+              <th style="text-align:right">现价</th>
+              <th style="text-align:right">涨跌幅</th>
+            </tr>
+          </thead>
+          <tbody id="spot-tbody">
+            <tr><td colspan="4" style="text-align:center; color:var(--text-dim)">加载中...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>模拟盘资产</span>
+          <button class="btn" style="background:#475569; color:#fff" onclick="refreshPaper()">刷新</button>
+        </div>
+        <div id="paper-summary" style="font-size:13px; margin-bottom:10px;">
+          总资产: <strong id="paper-equity">-</strong> | 可用现金: <span id="paper-cash">-</span>
+        </div>
+        <table>
+          <thead>
+            <tr><th>持仓</th><th>数量</th><th>可卖</th><th style="text-align:right">市值</th></tr>
+          </thead>
+          <tbody id="paper-tbody">
+            <tr><td colspan="4" style="text-align:center; color:var(--text-dim)">无持仓</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 右栏: K线图表与大师预测 -->
+    <div>
+      <div class="card">
+        <div class="card-title">
+          <span>日 K 线图: <span id="current-symbol-title" style="color:var(--accent)">600519</span></span>
+          <div>
+            <button class="btn" onclick="runPredict()">明日预测与大师观点</button>
+          </div>
+        </div>
+        <div id="chart-container"></div>
+      </div>
+
+      <div class="card" id="predict-card" style="display:none;">
+        <div class="card-title">
+          <span>明日预测结论: <span id="pred-direction" style="font-size:16px;">-</span></span>
+          <span id="pred-prob" style="font-size:13px; color:var(--text-dim)">-</span>
+        </div>
+        <div id="pred-note" style="font-size:12px; color:var(--text-dim); margin-bottom:8px;"></div>
+        <div class="signals-grid" id="signals-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    本系统输出均为历史数据统计与概率估计，不构成任何投资建议。
+    「在投资行当里，如果你优秀，你十次能对六次，永远不可能十次对九次。」——彼得·林奇
+  </footer>
+
+  <script>
+    let currentSymbol = "600519";
+    let chart = null;
+    let candleSeries = null;
+    let volumeSeries = null;
+
+    function initChart() {
+      const container = document.getElementById("chart-container");
+      chart = LightweightCharts.createChart(container, {
+        layout: { background: { color: "#1e293b" }, textColor: "#94a3b8" },
+        grid: { vertLines: { color: "#334155" }, horzLines: { color: "#334155" } },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+        rightPriceScale: { borderColor: "#334155" },
+        timeScale: { borderColor: "#334155", timeVisible: true },
+      });
+
+      candleSeries = chart.addCandlestickSeries({
+        upColor: "#ef4444", downColor: "#22c55e",
+        borderUpColor: "#ef4444", borderDownColor: "#22c55e",
+        wickUpColor: "#ef4444", wickDownColor: "#22c55e",
+      });
+
+      volumeSeries = chart.addHistogramSeries({
+        color: "#38bdf840",
+        priceFormat: { type: "volume" },
+        priceScaleId: "",
+        scaleMargins: { top: 0.8, bottom: 0 },
+      });
+
+      window.addEventListener("resize", () => {
+        chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+      });
+    }
+
+    async function fetchSpot() {
+      const syms = document.getElementById("symbols-input").value;
+      try {
+        const res = await fetch(`/api/spot?symbols=${encodeURIComponent(syms)}`);
+        const data = await res.json();
+        const tbody = document.getElementById("spot-tbody");
+        tbody.innerHTML = "";
+        
+        if (data.quotes && data.quotes.length > 0) {
+          document.getElementById("market-status").innerText = data.quotes[0].market_state || "就绪";
+        }
+
+        data.quotes.forEach(q => {
+          const tr = document.createElement("tr");
+          tr.className = "clickable" + (q.symbol === currentSymbol ? " selected" : "");
+          tr.onclick = () => selectSymbol(q.symbol);
+          
+          const pct = q.pct_chg != null ? (q.pct_chg > 0 ? `+${q.pct_chg.toFixed(2)}%` : `${q.pct_chg.toFixed(2)}%`) : "n/a";
+          const colorClass = (q.pct_chg || 0) > 0 ? "up" : ((q.pct_chg || 0) < 0 ? "down" : "");
+          const px = q.price != null ? q.price.toFixed(2) : "-";
+
+          tr.innerHTML = `
+            <td style="font-weight:600">${q.symbol}</td>
+            <td>${q.name || "-"}</td>
+            <td style="text-align:right">${px}</td>
+            <td style="text-align:right" class="${colorClass}">${pct}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      } catch (e) {
+        console.error("快照失败:", e);
+      }
+    }
+
+    async function selectSymbol(symbol) {
+      currentSymbol = symbol;
+      document.getElementById("current-symbol-title").innerText = symbol;
+      document.getElementById("predict-card").style.display = "none";
+      fetchSpot();
+      loadKline(symbol);
+    }
+
+    async function loadKline(symbol) {
+      try {
+        const res = await fetch(`/api/kline/${symbol}`);
+        if (!res.ok) {
+          const err = await res.json();
+          alert(err.detail || "加载 K 线失败");
+          return;
+        }
+        const data = await res.json();
+        const candleData = data.bars.map(b => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close }));
+        const volData = data.bars.map(b => ({
+          time: b.time,
+          value: b.volume,
+          color: b.close >= b.open ? "#ef444440" : "#22c55e40"
+        }));
+
+        candleSeries.setData(candleData);
+        volumeSeries.setData(volData);
+        chart.timeScale().fitContent();
+      } catch (e) {
+        console.error("K线加载错误:", e);
+      }
+    }
+
+    async function runPredict() {
+      const card = document.getElementById("predict-card");
+      card.style.display = "block";
+      document.getElementById("pred-direction").innerText = "正在计算大师信号...";
+      document.getElementById("signals-container").innerHTML = "";
+
+      try {
+        const res = await fetch(`/api/predict/${currentSymbol}`);
+        if (!res.ok) {
+          const err = await res.json();
+          document.getElementById("pred-direction").innerText = "无法预测";
+          document.getElementById("pred-note").innerText = err.detail;
+          return;
+        }
+        const data = await res.json();
+        const dirEl = document.getElementById("pred-direction");
+        dirEl.innerText = data.direction === "UP" ? "看涨 (UP)" : (data.direction === "DOWN" ? "看跌 (DOWN)" : "观望 (NEUTRAL)");
+        dirEl.className = data.direction === "UP" ? "up" : (data.direction === "DOWN" ? "down" : "");
+
+        document.getElementById("pred-prob").innerText = `上涨概率: ${(data.prob_up * 100).toFixed(1)}% | 置信度: ${data.confidence} | 综合分: ${data.score > 0 ? '+' : ''}${data.score}`;
+        document.getElementById("pred-note").innerText = data.abstain_reason || data.note;
+
+        const container = document.getElementById("signals-container");
+        container.innerHTML = "";
+        data.signals.forEach(s => {
+          const div = document.createElement("div");
+          div.className = "signal-card";
+          const scClass = s.score > 0.15 ? "up" : (s.score < -0.15 ? "down" : "");
+          div.innerHTML = `
+            <div class="signal-master">
+              <span>${s.master} <span style="font-size:11px;color:#64748b">(${s.category})</span></span>
+              <span class="${scClass}">${s.score > 0 ? '+' : ''}${s.score.toFixed(2)}</span>
+            </div>
+            <div class="signal-reason">${s.reason}</div>
+            <div class="signal-quote">“${s.quote}”</div>
+          `;
+          container.appendChild(div);
+        });
+      } catch (e) {
+        document.getElementById("pred-direction").innerText = "请求失败: " + e;
+      }
+    }
+
+    async function refreshPaper() {
+      try {
+        const res = await fetch("/api/paper");
+        const data = await res.json();
+        document.getElementById("paper-equity").innerText = "¥" + data.equity.toLocaleString();
+        document.getElementById("paper-cash").innerText = "¥" + data.cash.toLocaleString();
+        const tbody = document.getElementById("paper-tbody");
+        tbody.innerHTML = "";
+        if (data.positions && data.positions.length > 0) {
+          data.positions.forEach(p => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td><strong>${p.symbol}</strong></td>
+              <td>${p.shares}</td>
+              <td style="color:#22c55e">${p.sellable}</td>
+              <td style="text-align:right">¥${p.market_value.toLocaleString()}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+        } else {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-dim)">暂无持仓</td></tr>';
+        }
+      } catch (e) {
+        console.error("模拟盘加载失败:", e);
+      }
+    }
+
+    window.onload = () => {
+      initChart();
+      fetchSpot();
+      loadKline(currentSymbol);
+      refreshPaper();
+      setInterval(fetchSpot, 5000);
+    };
+  </script>
+</body>
+</html>
