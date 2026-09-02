@@ -1,11 +1,12 @@
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from ashquant.backtest.breaker import MarketStats, RegimeBreaker
 from ashquant.domain import MarketRegime
 
 
-def test_regime_breaker_market_plunge():
-    breaker = RegimeBreaker(index_drop_limit=-0.025, down_ratio_limit=0.80)
+def test_regime_breaker_market_plunge(tmp_path: Path):
+    breaker = RegimeBreaker(index_drop_limit=-0.025, down_ratio_limit=0.80, state_file=tmp_path / "b1.json")
 
     # 常态行情
     normal_stats = MarketStats(up_count=2600, down_count=2400, index_return=0.005)
@@ -20,8 +21,8 @@ def test_regime_breaker_market_plunge():
     assert breaker.evaluate_market(down_stats) == MarketRegime.PANIC_CIRCUIT_BROKEN
 
 
-def test_regime_breaker_account_cooldown():
-    breaker = RegimeBreaker(consecutive_loss_limit=3, cooldown_hours=24)
+def test_regime_breaker_account_cooldown(tmp_path: Path):
+    breaker = RegimeBreaker(consecutive_loss_limit=3, cooldown_hours=24, state_file=tmp_path / "b2.json")
     now = datetime(2026, 9, 2, 10, 0, 0)
 
     assert not breaker.is_account_in_cooldown(now)

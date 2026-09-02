@@ -6,14 +6,18 @@
    - 在熔断状态下，系统强制拒止一切新的买入预测与模拟盘/实盘开仓挂单。
 2. 账户级熔断：
    - 连续 3 笔交易触发止损后，进入 24 小时交易冷静期。
+   - 支持状态持久化，跨 CLI 调用与进程生命周期有效。
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 
+from ashquant.config import DATA_DIR
 from ashquant.domain import MarketRegime
 
 logger = logging.getLogger(__name__)
@@ -30,7 +34,7 @@ class MarketStats:
 
 
 class RegimeBreaker:
-    """市场与账户环境熔断器。"""
+    """市场与账户环境熔断器（具备文件持久化）。"""
 
     def __init__(
         self,
@@ -38,14 +42,39 @@ class RegimeBreaker:
         down_ratio_limit: float = 0.80,         # 全市场 80% 个股下跌触发熔断
         consecutive_loss_limit: int = 3,        # 连续亏损熔断笔数
         cooldown_hours: int = 24,               # 账户冷静期时长 (小时)
+        state_file: Path | None = None,
     ):
         self.index_drop_limit = index_drop_limit
         self.down_ratio_limit = down_ratio_limit
         self.consecutive_loss_limit = consecutive_loss_limit
         self.cooldown_hours = cooldown_hours
+        self.state_file = state_file or (DATA_DIR / "breaker_state.json")
 
         self.consecutive_losses: int = 0
         self.cooldown_until: datetime | None = None
+        self._load_state()
+
+    def _load_state(self) -> None:
+        if self.state_file and self.state_file.exists():
+            try:
+                data = json.loads(self.state_file.read_text(encoding="utf-8"))
+                self.consecutive_losses = data.get("consecutive_losses", 0)
+                cd = data.get("cooldown_until")
+                self.cooldown_until = datetime.fromisoformat(cd) if cd else None
+            except Exception as e:
+                logger.debug("读取熔断状态失败: %s", e)
+
+    def _save_state(self) -> None:
+        if self.state_file:
+            try:
+                self.state_file.parent.mkdir(parents=True, exist_ok=True)
+                data = {
+                    "consecutive_losses": self.consecutive_losses,
+                    "cooldown_until": self.cooldown_until.isoformat() if self.cooldown_until else None,
+                }
+                self.state_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception as e:
+                logger.debug("保存熔断状态失败: %s", e)
 
     def evaluate_market(self, stats: MarketStats) -> MarketRegime:
         """评估当前市场环境是否触发熔断。"""
@@ -73,7 +102,7 @@ class RegimeBreaker:
         return False
 
     def record_trade_result(self, is_win: bool, current_time: datetime | None = None) -> None:
-        """记录交易胜负，更新账户熔断状态。"""
+        """记录交易胜负，更新并持久化账户熔断状态。"""
         now = current_time or datetime.now()
         if is_win:
             self.consecutive_losses = 0
@@ -87,3 +116,4 @@ class RegimeBreaker:
                     self.cooldown_hours,
                     self.cooldown_until.isoformat(),
                 )
+        self._save_state()

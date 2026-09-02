@@ -30,7 +30,8 @@ class PaperBroker:
         self.path = Path(self.cfg.data_dir) / "paper_portfolio.json"
         self.trades_path = Path(self.cfg.data_dir) / "paper_trades.jsonl"
         self.rules = MarketRules(self.cfg.fees)
-        self.breaker = breaker or RegimeBreaker()
+        breaker_file = Path(self.cfg.data_dir) / "breaker_state.json"
+        self.breaker = breaker or RegimeBreaker(state_file=breaker_file)
 
     # ---------- 状态 ----------
 
