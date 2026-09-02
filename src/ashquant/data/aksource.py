@@ -152,18 +152,26 @@ def fetch_index_daily(index_code: str = "000300", start: date | str = "20200101"
     except Exception:
         pass
 
+    # 腾讯降级源
     qq_code = "sh000300" if index_code == "000300" else f"sh{index_code}"
     url = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
     params = {"param": f"{qq_code},day,,,800"}
-    resp = _safe_get(url, headers={"User-Agent": "Mozilla/5.0"}, params=params, timeout=10)
-    data = resp.json().get("data", {}).get(qq_code, {}).get("day", [])
-    records = []
-    for b in data:
-        dt = pd.to_datetime(b[0])
-        op, cl, hi, lo = float(b[1]), float(b[2]), float(b[3]), float(b[4])
-        vol = float(b[5]) * 100.0
-        records.append({"date": dt, "open": op, "high": hi, "low": lo, "close": cl, "volume": vol, "amount": cl * vol})
-    return pd.DataFrame(records).set_index("date").sort_index()[["open", "high", "low", "close", "volume", "amount"]]
+    try:
+        resp = _safe_get(url, headers={"User-Agent": "Mozilla/5.0"}, params=params, timeout=10)
+        data = resp.json().get("data", {}).get(qq_code, {}).get("day", [])
+        if not data:
+            raise DataSourceError(f"腾讯指数降级源返回空数据: {qq_code}")
+        records = []
+        for b in data:
+            dt = pd.to_datetime(b[0])
+            op, cl, hi, lo = float(b[1]), float(b[2]), float(b[3]), float(b[4])
+            vol = float(b[5]) * 100.0
+            records.append({"date": dt, "open": op, "high": hi, "low": lo, "close": cl, "volume": vol, "amount": cl * vol})
+        if not records:
+            raise DataSourceError(f"解析腾讯指数日线无有效记录: {qq_code}")
+        return pd.DataFrame(records).set_index("date").sort_index()[["open", "high", "low", "close", "volume", "amount"]]
+    except Exception as e:
+        raise DataSourceError(f"获取指数日线失败 ({index_code}): {e}") from e
 
 
 def fetch_spot(symbols: list[str] | None = None) -> pd.DataFrame:
