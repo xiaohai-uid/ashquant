@@ -5,7 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-UP, DOWN, NEUTRAL = "UP", "DOWN", "NEUTRAL"
+from ashquant.domain import SignalDirection
+
+UP = SignalDirection.UP
+DOWN = SignalDirection.DOWN
+NEUTRAL = SignalDirection.NEUTRAL
 
 # 治理锚点（specs/research/04-master-quotes.md）：输出界面固定附注
 GOVERNANCE_NOTE = (

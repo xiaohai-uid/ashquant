@@ -62,3 +62,16 @@ def test_sell_t1_and_limit_down():
     res_ok = rules.sell("600519", False, "2024-01-02", 9.50, 10.00, 100, held_shares=100, sellable_shares=100)
     assert res_ok.status == FILLED
     assert res_ok.price == 9.50
+
+
+def test_market_context_deep_interface():
+    from ashquant.domain import MarketContext
+    rules = MarketRules()
+
+    # 使用 MarketContext 封装进行买卖撮合
+    ctx = MarketContext(symbol="600519", trade_date="2024-01-02", price=10.0, prev_close=10.0, is_st=False)
+    res_buy = rules.buy_context(ctx, qty=100, cash=5000.0)
+    assert res_buy.status == FILLED
+
+    res_sell = rules.sell_context(ctx, qty=100, held_shares=100, sellable_shares=100)
+    assert res_sell.status == FILLED

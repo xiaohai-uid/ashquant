@@ -8,8 +8,12 @@ from datetime import date, datetime
 from pathlib import Path
 
 from ashquant import config as cfg_mod
-from ashquant.backtest.rules import DEFERRED, FILLED, MarketRules
+from ashquant.backtest.rules import MarketRules
 from ashquant.codes import is_st_name, normalize_symbol
+from ashquant.domain import FillStatus, MarketContext
+
+FILLED = FillStatus.FILLED
+DEFERRED = FillStatus.DEFERRED
 
 
 class PaperError(RuntimeError):
@@ -86,8 +90,8 @@ class PaperBroker:
         today = date.today().isoformat()
         self._rollover_date(st, today)
         pc = float(prev_close if prev_close is not None else price)
-        res = self.rules.buy(symbol, is_st_name(name), today, float(price),
-                             pc, int(qty), st["cash"])
+        ctx = MarketContext(symbol=symbol, trade_date=today, price=float(price), prev_close=pc, is_st=is_st_name(name))
+        res = self.rules.buy_context(ctx, qty=int(qty), cash=st["cash"])
         if res.status != FILLED:
             raise PaperError(f"买入被拒: {res.note}")
         amount = round(res.price * res.qty, 2)
@@ -119,8 +123,9 @@ class PaperBroker:
         if pos is None:
             raise PaperError("卖出被拒: NO_POSITION")
         pc = float(prev_close if prev_close is not None else price)
-        res = self.rules.sell(symbol, is_st_name(name), today, float(price), pc, int(qty),
-                              pos["shares"], pos["shares"] - pos.get("locked", 0))
+        ctx = MarketContext(symbol=symbol, trade_date=today, price=float(price), prev_close=pc, is_st=is_st_name(name))
+        res = self.rules.sell_context(ctx, qty=int(qty), held_shares=pos["shares"],
+                                      sellable_shares=pos["shares"] - pos.get("locked", 0))
         if res.status == DEFERRED:
             raise PaperError(f"卖出被拒: {res.note}（跌停无法成交，稍后再试）")
         if res.status != FILLED:

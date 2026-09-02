@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from ashquant import config as cfg_mod
+from ashquant.domain import SignalDirection
 from ashquant.indicators import add_indicators
 from ashquant.masters import compute_master_series, signal_at
 from ashquant.strategy import (
@@ -107,7 +108,7 @@ def settle_expired(store, cfg: cfg_mod.Config | None = None) -> int:
     entries = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
     n = 0
     for e in entries:
-        if e.get("hit") is not None or e.get("direction") == "NEUTRAL":
+        if e.get("hit") is not None or e.get("direction") == SignalDirection.NEUTRAL:
             continue
         bars = store.load_bars(e["symbol"])
         if bars is None:
@@ -121,7 +122,7 @@ def settle_expired(store, cfg: cfg_mod.Config | None = None) -> int:
             continue
         ret = float(c.iloc[pos]) / float(c.loc[as_of]) - 1.0
         e["actual_ret"] = round(ret, 6)
-        e["hit"] = bool(ret > 0) if e["direction"] == "UP" else bool(ret < 0)
+        e["hit"] = bool(ret > 0) if e["direction"] == SignalDirection.UP else bool(ret < 0)
         n += 1
     tmp = path.with_suffix(".jsonl.tmp")
     with tmp.open("w", encoding="utf-8") as f:

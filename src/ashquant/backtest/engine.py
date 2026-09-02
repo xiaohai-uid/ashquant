@@ -18,6 +18,7 @@ import pandas as pd
 from ashquant import config as cfg_mod
 from ashquant.backtest.metrics import performance, prediction_stats, win_rate
 from ashquant.backtest.rules import DEFERRED, FILLED, MarketRules
+from ashquant.domain import MarketContext, OrderSide, SignalDirection
 from ashquant.indicators import add_indicators
 from ashquant.masters import compute_master_series
 from ashquant.strategy import (
@@ -143,22 +144,23 @@ def run_backtest(
             pending_sells.pop(s, None)
             return
         sellable = pos.shares if (pos.bought_date is None or pos.bought_date < d.date()) else 0
-        res = rules.sell(s, s in st_symbols, d.date(), op,
-                         float(pc) if pd.notna(pc) else op, qty, pos.shares, sellable)
+        ctx = MarketContext(symbol=s, trade_date=d.date(), price=op,
+                            prev_close=float(pc) if pd.notna(pc) else op, is_st=s in st_symbols)
+        res = rules.sell_context(ctx, qty=qty, held_shares=pos.shares, sellable_shares=sellable)
         if res.status == FILLED:
             amount = round(res.price * res.qty, 2)
             fee = sum(res.fees.values())
             cash_local_delta = round(amount - fee, 2)
             pnl = cash_local_delta - pos.cost_total
             cash += cash_local_delta
-            trades.append({"date": str(d.date()), "symbol": s, "side": "SELL",
+            trades.append({"date": str(d.date()), "symbol": s, "side": OrderSide.SELL,
                            "qty": res.qty, "price": res.price, "fees": res.fees,
                            "note": "ok", "pnl": round(pnl, 2)})
             positions.pop(s, None)
             pending_sells.pop(s, None)
         elif res.status == DEFERRED:
             pending_sells[s] = qty  # 跌停，次日再试
-            trades.append({"date": str(d.date()), "symbol": s, "side": "SELL",
+            trades.append({"date": str(d.date()), "symbol": s, "side": OrderSide.SELL,
                            "qty": qty, "price": None, "fees": {}, "note": "DEFERRED:" + res.note,
                            "pnl": None})
 
@@ -180,15 +182,16 @@ def run_backtest(
                 qty = int((equity_est * w) / op / 100) * 100
                 if qty <= 0:
                     continue
-                res = rules.buy(s, s in st_symbols, d.date(), op,
-                                float(pc) if pd.notna(pc) else op, qty, cash)
+                ctx = MarketContext(symbol=s, trade_date=d.date(), price=op,
+                                    prev_close=float(pc) if pd.notna(pc) else op, is_st=s in st_symbols)
+                res = rules.buy_context(ctx, qty=qty, cash=cash)
                 if res.status == FILLED:
                     amount = round(res.price * res.qty, 2)
                     fee = sum(res.fees.values())
                     cash -= round(amount + fee, 2)
                     positions[s] = Position(shares=res.qty, cost_total=round(amount + fee, 2),
                                             bought_date=d.date())
-                    trades.append({"date": str(d.date()), "symbol": s, "side": "BUY",
+                    trades.append({"date": str(d.date()), "symbol": s, "side": OrderSide.BUY,
                                    "qty": res.qty, "price": res.price, "fees": res.fees,
                                    "note": "ok", "pnl": None})
             pending_target = None
@@ -234,9 +237,9 @@ def run_backtest(
         if pos < len(c.index) and as_of in c.index:
             ret = float(c.iloc[pos]) / float(c.loc[as_of]) - 1.0
             row["actual_ret"] = round(ret, 6)
-            if row["direction"] == "UP":
+            if row["direction"] == SignalDirection.UP:
                 row["hit"] = bool(ret > 0)
-            elif row["direction"] == "DOWN":
+            elif row["direction"] == SignalDirection.DOWN:
                 row["hit"] = bool(ret < 0)
             else:
                 row["hit"] = None
