@@ -1,4 +1,7 @@
-"""模拟盘（paper trading）：默认交易形态（宪法 III），复用 MarketRules 规则引擎。"""
+"""模拟盘（paper trading）：默认交易形态（宪法 III），复用 MarketRules 规则引擎。
+
+v0.2.0: 接入 RegimeBreaker 熔断机制，在异常行情或连续亏损冷静期下拦截买入。
+"""
 
 from __future__ import annotations
 
@@ -8,6 +11,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from ashquant import config as cfg_mod
+from ashquant.backtest.breaker import RegimeBreaker
 from ashquant.backtest.rules import MarketRules
 from ashquant.codes import is_st_name, normalize_symbol
 from ashquant.domain import FillStatus, MarketContext
@@ -21,11 +25,12 @@ class PaperError(RuntimeError):
 
 
 class PaperBroker:
-    def __init__(self, cfg: cfg_mod.Config | None = None):
+    def __init__(self, cfg: cfg_mod.Config | None = None, breaker: RegimeBreaker | None = None):
         self.cfg = cfg or cfg_mod.get_config()
         self.path = Path(self.cfg.data_dir) / "paper_portfolio.json"
         self.trades_path = Path(self.cfg.data_dir) / "paper_trades.jsonl"
         self.rules = MarketRules(self.cfg.fees)
+        self.breaker = breaker or RegimeBreaker()
 
     # ---------- 状态 ----------
 
@@ -85,6 +90,10 @@ class PaperBroker:
 
     def buy(self, symbol: str, qty: int, price: float, name: str = "",
             prev_close: float | None = None) -> dict:
+        # 熔断拦截
+        if self.breaker.is_account_in_cooldown():
+            raise PaperError("买入被拒: 账户处于连续亏损 24 小时冷静期熔断保护中")
+
         symbol = normalize_symbol(symbol)
         st = self._load()
         today = date.today().isoformat()
@@ -142,6 +151,10 @@ class PaperBroker:
         self._save(st)
         self._append_trade({"date": today, "symbol": symbol, "side": "SELL", "qty": res.qty,
                             "price": res.price, "fees": res.fees, "amount": amount, "pnl": pnl})
+
+        # 记录胜负至熔断器
+        self.breaker.record_trade_result(is_win=bool(pnl > 0))
+
         return {"symbol": symbol, "qty": res.qty, "price": res.price, "fees": res.fees,
                 "pnl": pnl, "cash": st["cash"]}
 

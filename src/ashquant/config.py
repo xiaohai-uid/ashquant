@@ -10,6 +10,9 @@ from pathlib import Path
 # specs/research/02-ashare-data-and-brokers.md）
 ST_MAIN_SWITCH_DATE = "2026-07-06"
 
+# 默认全局数据目录常量
+DATA_DIR = Path(os.environ.get("ASHQUANT_DATA_DIR", "data"))
+
 
 @dataclass(frozen=True)
 class FeesConfig:

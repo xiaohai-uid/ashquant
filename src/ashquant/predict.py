@@ -1,25 +1,21 @@
 """实时预测：明日方向/概率/置信度/大师观点 + 可审计预测日志（close-to-close 口径）。
 
-基于 strategy.analyze_stock 深层模块，消除与回测引擎的时序特征重复计算。
+基于 strategy.StockAnalysis 深层模块，预测与快照生成完全由实体自身契约负责。
 """
 
 from __future__ import annotations
 
 import json
-import uuid
-from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
 from ashquant import config as cfg_mod
+from ashquant.debate.memory import ReflectionMemory
 from ashquant.domain import SignalDirection
-from ashquant.masters import signal_at
 from ashquant.strategy import (
-    GOVERNANCE_NOTE,
+    StockAnalysis,
     analyze_stock,
-    confidence_tier,
-    direction_of,
 )
 
 
@@ -40,7 +36,7 @@ def predict_next_day(store, symbol: str, cfg: cfg_mod.Config | None = None,
         )
 
     # 接入 AnalysisPipeline 深层模块
-    analysis = analyze_stock(
+    analysis: StockAnalysis = analyze_stock(
         symbol=symbol,
         bars=bars,
         master_weights=sc.master_weights,
@@ -49,69 +45,27 @@ def predict_next_day(store, symbol: str, cfg: cfg_mod.Config | None = None,
         refit_every=5,
     )
 
-    as_of = analysis.indicators.index[-1]
-    p = float(analysis.prob_up.iloc[-1])
-    direction = direction_of(p, sc.neutral_band)
-    score_val = float(analysis.ensemble_score.iloc[-1])
+    # 【深度调用】：由实体直接生成预测记录
+    result = analysis.to_prediction_record(neutral_band=sc.neutral_band)
 
-    result = {
-        "symbol": symbol,
-        "as_of": str(as_of.date()),
-        "direction": direction,
-        "prob_up": round(p, 4),
-        "confidence": confidence_tier(p, sc.neutral_band),
-        "method": str(analysis.calib_method.iloc[-1]),
-        "score": round(score_val, 4),
-        "signals": [
-            {"master": s.master, "category": s.category, "score": s.score,
-             "reason": s.reason, "quote": s.quote, "source": s.source}
-            for s in signal_at(analysis.indicators, analysis.master_scores, as_of)
-        ],
-        "note": GOVERNANCE_NOTE,
-    }
-    if direction == SignalDirection.NEUTRAL:
-        result["abstain_reason"] = (
-            f"|P(涨)-0.5| = {abs(p - 0.5):.3f} < 弃权阈值 {sc.neutral_band}，无把握，不给出方向"
-        )
     if log:
-        ind = analysis.indicators
-        features_snapshot = {
-            "close": round(float(bars["close"].iloc[-1]), 2),
-            "rsi14": round(float(ind["rsi14"].iloc[-1]), 2) if pd.notna(ind["rsi14"].iloc[-1]) else None,
-            "roc10": round(float(ind["roc10"].iloc[-1]), 4) if pd.notna(ind["roc10"].iloc[-1]) else None,
-            "vol_ratio": round(float(ind["vol_ratio"].iloc[-1]), 2) if pd.notna(ind["vol_ratio"].iloc[-1]) else None,
-            "score": result["score"],
-        }
-        signals_summary = {s["master"]: s["score"] for s in result["signals"]}
-
-        entry = {
-            "id": uuid.uuid4().hex[:12],
-            "symbol": symbol,
-            "as_of": result["as_of"],
-            "direction": direction,
-            "prob_up": result["prob_up"],
-            "confidence": result["confidence"],
-            "method": result["method"],
-            "features_snapshot": features_snapshot,
-            "signals_summary": signals_summary,
-            "created_at": datetime.now().isoformat(timespec="seconds"),
-            "actual_ret": None,
-            "hit": None,
-        }
         path = Path(cfg.data_dir) / "predictions.jsonl"
         with path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            f.write(json.dumps(result, ensure_ascii=False) + "\n")
+
     return result
 
 
 def settle_expired(store, cfg: cfg_mod.Config | None = None) -> int:
-    """对账：为已到期的预测回写 actual_ret/hit（统一使用 StockAnalysis.evaluate_hit）。"""
+    """对账：为已到期的预测回写 actual_ret/hit，若失误自动触发 ReflectionMemory 沉淀反思规则。"""
     cfg = cfg or cfg_mod.get_config()
     path = Path(cfg.data_dir) / "predictions.jsonl"
     if not path.exists():
         return 0
     entries = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     n = 0
+    memory = ReflectionMemory(Path(cfg.data_dir) / "reflection_memory.jsonl")
+
     # 缓存已加载的标的日线
     bars_cache = {}
     for e in entries:
@@ -124,13 +78,38 @@ def settle_expired(store, cfg: cfg_mod.Config | None = None) -> int:
         if bars is None:
             continue
 
-        # 构造轻量 StockAnalysis 或复用其 evaluate_hit 逻辑
+        # 复用 StockAnalysis.evaluate_hit
         analysis = analyze_stock(sym, bars)
         ret, hit = analysis.evaluate_hit(e["as_of"], e["direction"])
         if ret is not None:
             e["actual_ret"] = ret
             e["hit"] = hit
             n += 1
+
+            # 闭环学习飞轮：若看涨但下跌超 2% (或未命中且跌幅较大)，自动提炼经验规则
+            if e["direction"] == SignalDirection.UP and ret <= -0.02:
+                feat = e.get("features_snapshot", {})
+                tags = []
+                if (feat.get("vol_ratio") or 1.0) > 1.5:
+                    tags.append("high_volume_breakout")
+                if (feat.get("rsi14") or 50.0) > 70:
+                    tags.append("rsi_overbought")
+
+                blindspot = f"预测看多但在次日遭受 {ret:+.2%} 回撤，或遭主力盘中诱多派发"
+                rule = f"严禁在无强资金支撑下盲目追涨 {sym}，防范假突破陷阱"
+
+                try:
+                    memory.record_post_mortem(
+                        symbol=sym,
+                        timestamp=str(pd.Timestamp.now()),
+                        forecast_direction=SignalDirection.UP,
+                        actual_return=ret,
+                        pattern_tags=tags,
+                        fatal_blindspot=blindspot,
+                        rule_learned=rule,
+                    )
+                except Exception:
+                    pass
 
     tmp = path.with_suffix(".jsonl.tmp")
     with tmp.open("w", encoding="utf-8") as f:
