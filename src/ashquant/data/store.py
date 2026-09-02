@@ -16,7 +16,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ashquant.data import aksource
+from ashquant.data.aksource import DataSourceError, fetch_daily, fetch_index_daily
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +177,7 @@ class BarStore:
                 results[s] = "cached"
                 continue
             try:
-                df = aksource.fetch_daily(s, start, end)
+                df = fetch_daily(s, start, end)
                 if df is None or df.empty:
                     results[s] = "error: 空数据"
                     continue
@@ -194,7 +194,7 @@ class BarStore:
         """确保基准指数日线可用（缺失则抓取）。"""
         df = self.load_bars(INDEX_KEY)
         if df is None or (start and str(df.index.min().date()).replace("-", "") > str(start)):
-            df = aksource.fetch_index_daily(index_code, start, "20991231")
+            df = fetch_index_daily(index_code, start, "20991231")
             self.save_bars(INDEX_KEY, df, source=f"index_zh_a_hist({index_code})")
         return df
 
@@ -214,9 +214,9 @@ def csi300_constituents() -> list[str]:
     """沪深300 成分（akshare 新浪源；失败时给出可操作错误）。"""
     import akshare as ak
     try:
-        df = aksource._retry(ak.index_stock_cons, "index_stock_cons(000300)")  # noqa: SLF001
+        df = ak.index_stock_cons(symbol="000300")
     except Exception as e:  # noqa: BLE001
-        raise aksource.DataSourceError(
+        raise DataSourceError(
             f"获取沪深300成分失败: {e}；可改用 --symbols 显式指定或先用 --pool sample20"
         ) from e
     col = next(c for c in df.columns if "代码" in c)
