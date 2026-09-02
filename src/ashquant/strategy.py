@@ -1,11 +1,20 @@
-"""策略层：大师信号合成分 -> 概率校准（walk-forward 逻辑回归）-> 目标组合。"""
+"""策略层：大师信号合成分 -> 概率校准（walk-forward 逻辑回归）-> 目标组合。
+
+遵循 codebase-design 深度模块设计：
+- 导出深层分析实体 StockAnalysis 与流水线函数 analyze_stock()
+- 统一 close-to-close 收益结算与 hit 判定逻辑 (evaluate_hit)
+"""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
 from ashquant.domain import SignalDirection
+from ashquant.indicators import add_indicators
+from ashquant.masters import compute_master_series
 
 UP = SignalDirection.UP
 DOWN = SignalDirection.DOWN
@@ -20,6 +29,83 @@ GOVERNANCE_NOTE = (
 )
 
 
+@dataclass(frozen=True)
+class StockAnalysis:
+    """个股全量时序分析结果（Deep Value Object）。"""
+    symbol: str
+    bars: pd.DataFrame
+    indicators: pd.DataFrame
+    master_scores: pd.DataFrame
+    ensemble_score: pd.Series
+    prob_up: pd.Series
+    calib_method: pd.Series
+    close: pd.Series
+    open: pd.Series
+    prev_close: pd.Series
+
+    def evaluate_hit(self, as_of: str | pd.Timestamp, direction: SignalDirection | str) -> tuple[float | None, bool | None]:
+        """计算指定预测日在次日（close-to-close）的实际涨跌与命中结果。
+
+        口径：FR-012 close-to-close 涨跌。
+        """
+        as_of_ts = pd.Timestamp(as_of)
+        c = self.close
+        if as_of_ts not in c.index:
+            return None, None
+        pos = c.index.searchsorted(as_of_ts, side="right")
+        if pos >= len(c.index):
+            return None, None  # 尚未到期
+        ret = float(c.iloc[pos]) / float(c.loc[as_of_ts]) - 1.0
+        ret_round = round(ret, 6)
+
+        if str(direction).upper() == SignalDirection.UP:
+            hit = bool(ret > 0)
+        elif str(direction).upper() == SignalDirection.DOWN:
+            hit = bool(ret < 0)
+        else:
+            hit = None  # 观望不计命中
+        return ret_round, hit
+
+
+def analyze_stock(
+    symbol: str,
+    bars: pd.DataFrame,
+    master_weights: dict[str, float] | None = None,
+    calib_window: int = 250,
+    min_samples: int = 60,
+    refit_every: int = 5,
+) -> StockAnalysis:
+    """全量分析流水线（Deep Module 核心）。
+
+    输入单张原始 OHLCV 日线表，封装指标计算、大师打分、加权合成与 Walk-forward 概率校准。
+    """
+    master_weights = master_weights or _default_weights()
+    ind = add_indicators(bars)
+    mdf = compute_master_series(ind)
+    score = ensemble_series(mdf, master_weights)
+
+    next_up = (bars["close"].shift(-1) > bars["close"]).astype(float)
+    next_up.iloc[-1] = np.nan
+
+    prob, method = calibrate_series(
+        score, next_up, window=calib_window,
+        min_samples=min_samples, refit_every=refit_every,
+    )
+
+    return StockAnalysis(
+        symbol=symbol,
+        bars=bars,
+        indicators=ind,
+        master_scores=mdf,
+        ensemble_score=score,
+        prob_up=prob,
+        calib_method=method,
+        close=bars["close"],
+        open=bars["open"],
+        prev_close=bars["close"].shift(1),
+    )
+
+
 def ensemble_series(master_df: pd.DataFrame, weights: dict[str, float]) -> pd.Series:
     """按哲学类别加权合成大师打分 -> 综合分 s∈[-1,1]。"""
     w = pd.Series({m: weights.get(cat, 1.0) for m, cat in _name_category().items()})
@@ -31,6 +117,10 @@ def _name_category() -> dict[str, str]:
     from ashquant.masters import REGISTRY
 
     return {m.name: m.category for m in REGISTRY}
+
+
+def _default_weights() -> dict[str, float]:
+    return {"trend": 1.0, "momentum": 1.0, "reversion": 0.8, "risk": 0.6, "sentiment": 0.8}
 
 
 def _sigmoid(z):

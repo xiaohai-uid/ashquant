@@ -1,4 +1,7 @@
-"""实时预测：明日方向/概率/置信度/大师观点 + 可审计预测日志（close-to-close 口径）。"""
+"""实时预测：明日方向/概率/置信度/大师观点 + 可审计预测日志（close-to-close 口径）。
+
+基于 strategy.analyze_stock 深层模块，消除与回测引擎的时序特征重复计算。
+"""
 
 from __future__ import annotations
 
@@ -7,19 +10,16 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from ashquant import config as cfg_mod
 from ashquant.domain import SignalDirection
-from ashquant.indicators import add_indicators
-from ashquant.masters import compute_master_series, signal_at
+from ashquant.masters import signal_at
 from ashquant.strategy import (
     GOVERNANCE_NOTE,
-    calibrate_series,
+    analyze_stock,
     confidence_tier,
     direction_of,
-    ensemble_series,
 )
 
 
@@ -38,38 +38,43 @@ def predict_next_day(store, symbol: str, cfg: cfg_mod.Config | None = None,
             f"{symbol} 数据不足（需 ≥{sc.min_history} 个交易日，"
             f"现有 {0 if bars is None else len(bars)}）；请先 ashquant fetch"
         )
-    ind = add_indicators(bars)
-    mdf = compute_master_series(ind)
-    score = ensemble_series(mdf, sc.master_weights)
-    next_up = (bars["close"].shift(-1) > bars["close"]).astype(float)
-    next_up.iloc[-1] = np.nan
-    prob, method = calibrate_series(
-        score, next_up, window=sc.calib_window,
-        min_samples=max(60, sc.min_history // 2), refit_every=5,
+
+    # 接入 AnalysisPipeline 深层模块
+    analysis = analyze_stock(
+        symbol=symbol,
+        bars=bars,
+        master_weights=sc.master_weights,
+        calib_window=sc.calib_window,
+        min_samples=max(60, sc.min_history // 2),
+        refit_every=5,
     )
-    as_of = ind.index[-1]
-    p = float(prob.iloc[-1])
+
+    as_of = analysis.indicators.index[-1]
+    p = float(analysis.prob_up.iloc[-1])
     direction = direction_of(p, sc.neutral_band)
+    score_val = float(analysis.ensemble_score.iloc[-1])
+
     result = {
         "symbol": symbol,
         "as_of": str(as_of.date()),
         "direction": direction,
         "prob_up": round(p, 4),
         "confidence": confidence_tier(p, sc.neutral_band),
-        "method": str(method.iloc[-1]),
-        "score": round(float(score.iloc[-1]), 4),
+        "method": str(analysis.calib_method.iloc[-1]),
+        "score": round(score_val, 4),
         "signals": [
             {"master": s.master, "category": s.category, "score": s.score,
              "reason": s.reason, "quote": s.quote, "source": s.source}
-            for s in signal_at(ind, mdf, as_of)
+            for s in signal_at(analysis.indicators, analysis.master_scores, as_of)
         ],
         "note": GOVERNANCE_NOTE,
     }
-    if direction == "NEUTRAL":
+    if direction == SignalDirection.NEUTRAL:
         result["abstain_reason"] = (
             f"|P(涨)-0.5| = {abs(p - 0.5):.3f} < 弃权阈值 {sc.neutral_band}，无把握，不给出方向"
         )
     if log:
+        ind = analysis.indicators
         features_snapshot = {
             "close": round(float(bars["close"].iloc[-1]), 2),
             "rsi14": round(float(ind["rsi14"].iloc[-1]), 2) if pd.notna(ind["rsi14"].iloc[-1]) else None,
@@ -100,30 +105,33 @@ def predict_next_day(store, symbol: str, cfg: cfg_mod.Config | None = None,
 
 
 def settle_expired(store, cfg: cfg_mod.Config | None = None) -> int:
-    """对账：为已到期的预测回写 actual_ret/hit（close-to-close）。返回结算条数。"""
+    """对账：为已到期的预测回写 actual_ret/hit（统一使用 StockAnalysis.evaluate_hit）。"""
     cfg = cfg or cfg_mod.get_config()
     path = Path(cfg.data_dir) / "predictions.jsonl"
     if not path.exists():
         return 0
-    entries = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    entries = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     n = 0
+    # 缓存已加载的标的日线
+    bars_cache = {}
     for e in entries:
         if e.get("hit") is not None or e.get("direction") == SignalDirection.NEUTRAL:
             continue
-        bars = store.load_bars(e["symbol"])
+        sym = e["symbol"]
+        if sym not in bars_cache:
+            bars_cache[sym] = store.load_bars(sym)
+        bars = bars_cache[sym]
         if bars is None:
             continue
-        c = bars["close"]
-        as_of = pd.Timestamp(e["as_of"])
-        if as_of not in c.index:
-            continue
-        pos = c.index.searchsorted(as_of, side="right")
-        if pos >= len(c.index):
-            continue
-        ret = float(c.iloc[pos]) / float(c.loc[as_of]) - 1.0
-        e["actual_ret"] = round(ret, 6)
-        e["hit"] = bool(ret > 0) if e["direction"] == SignalDirection.UP else bool(ret < 0)
-        n += 1
+
+        # 构造轻量 StockAnalysis 或复用其 evaluate_hit 逻辑
+        analysis = analyze_stock(sym, bars)
+        ret, hit = analysis.evaluate_hit(e["as_of"], e["direction"])
+        if ret is not None:
+            e["actual_ret"] = ret
+            e["hit"] = hit
+            n += 1
+
     tmp = path.with_suffix(".jsonl.tmp")
     with tmp.open("w", encoding="utf-8") as f:
         for e in entries:
@@ -138,7 +146,7 @@ def prediction_stats(min_count: int = 20, cfg: cfg_mod.Config | None = None) -> 
     path = Path(cfg.data_dir) / "predictions.jsonl"
     if not path.exists():
         raise FileNotFoundError("尚无预测日志；先运行 ashquant predict / backtest")
-    entries = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    entries = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     df = pd.DataFrame(entries)
     settled = df[df["hit"].notna()] if "hit" in df else df.iloc[0:0]
     if len(settled) < min_count:

@@ -18,14 +18,12 @@ import pandas as pd
 from ashquant import config as cfg_mod
 from ashquant.backtest.metrics import performance, prediction_stats, win_rate
 from ashquant.backtest.rules import DEFERRED, FILLED, MarketRules
-from ashquant.domain import MarketContext, OrderSide, SignalDirection
-from ashquant.indicators import add_indicators
-from ashquant.masters import compute_master_series
+from ashquant.domain import MarketContext, OrderSide
 from ashquant.strategy import (
+    StockAnalysis,
+    analyze_stock,
     build_target_portfolio,
-    calibrate_series,
     direction_of,
-    ensemble_series,
 )
 
 
@@ -79,32 +77,29 @@ def run_backtest(
     rules = MarketRules(fee_enabled=bcfg.fee_enabled)
     strat_w = bcfg.master_weights
 
-    # ---- 预计算：指标 / 大师序列 / 综合分 / 概率（全部因果） ----
-    frames: dict[str, dict] = {}
+    # ---- 预计算：通过 analyze_stock 深度模块统一计算 ----
+    analyses: dict[str, StockAnalysis] = {}
     for s in syms:
         bars = loader(s)
         if bars is None or len(bars) < 30:
             continue
-        ind = add_indicators(bars)
-        mdf = compute_master_series(ind)
-        score = ensemble_series(mdf, strat_w)
-        next_up = (bars["close"].shift(-1) > bars["close"]).astype(float)
-        next_up.iloc[-1] = np.nan
-        prob, method = calibrate_series(
-            score, next_up, window=bcfg.calib_window,
-            min_samples=max(60, bcfg.min_history // 2), refit_every=bcfg.rebalance_days,
+        analyses[s] = analyze_stock(
+            symbol=s,
+            bars=bars,
+            master_weights=strat_w,
+            calib_window=bcfg.calib_window,
+            min_samples=max(60, bcfg.min_history // 2),
+            refit_every=bcfg.rebalance_days,
         )
-        frames[s] = {"ind": ind, "score": score, "prob": prob, "close": bars["close"],
-                     "open": bars["open"], "prev_close": bars["close"].shift(1)}
 
-    if not frames:
+    if not analyses:
         raise ValueError("没有任何标的有足够数据（≥30 根日线）可回测")
 
     # ---- 日历 ----
     if benchmark_df is not None and len(benchmark_df):
         cal = benchmark_df.index
     else:
-        cal = sorted(set().union(*[set(f["close"].index) for f in frames.values()]))
+        cal = sorted(set().union(*[set(ana.close.index) for ana in analyses.values()]))
         cal = pd.DatetimeIndex(cal)
     start = pd.Timestamp(bcfg.start) if bcfg.start else cal[0]
     end = pd.Timestamp(bcfg.end) if bcfg.end else cal[-1]
@@ -112,7 +107,7 @@ def run_backtest(
     if len(cal) < 10:
         raise ValueError(f"回测区间过短（{len(cal)} 个交易日）")
 
-    closes = {s: f["close"].reindex(cal).ffill() for s, f in frames.items()}
+    closes = {s: ana.close.reindex(cal).ffill() for s, ana in analyses.items()}
 
     # ---- 状态 ----
     cash = bcfg.initial_cash
@@ -135,10 +130,10 @@ def run_backtest(
 
     def do_sell(s: str, d: pd.Timestamp, qty: int) -> None:
         nonlocal cash
-        fr = frames[s]
-        if d not in fr["open"].index:
+        ana = analyses[s]
+        if d not in ana.open.index:
             return  # 停牌：顺延
-        op, pc = float(fr["open"].loc[d]), fr["prev_close"].loc[d]
+        op, pc = float(ana.open.loc[d]), ana.prev_close.loc[d]
         pos = positions.get(s)
         if pos is None or pos.shares <= 0:
             pending_sells.pop(s, None)
@@ -172,12 +167,12 @@ def run_backtest(
             for s in [x for x in list(positions) if x not in targets]:
                 do_sell(s, d, positions[s].shares)
             for s, w in sorted(targets.items(), key=lambda kv: -kv[1]):
-                if s in positions or s not in frames:
+                if s in positions or s not in analyses:
                     continue
-                fr = frames[s]
-                if d not in fr["open"].index:
+                ana = analyses[s]
+                if d not in ana.open.index:
                     continue
-                op, pc = float(fr["open"].loc[d]), fr["prev_close"].loc[d]
+                op, pc = float(ana.open.loc[d]), ana.prev_close.loc[d]
                 equity_est = cash + market_value(d)
                 qty = int((equity_est * w) / op / 100) * 100
                 if qty <= 0:
@@ -205,11 +200,11 @@ def run_backtest(
         # 3) 调仓信号日（收盘后）：打分 + 记录预测日志 + 生成次日目标
         if j - last_rebalance >= bcfg.rebalance_days:
             probs: dict[str, float] = {}
-            for s, fr in frames.items():
-                hist = int((fr["close"].index <= d).sum())
-                if hist < bcfg.min_history or d not in fr["prob"].index:
+            for s, ana in analyses.items():
+                hist = int((ana.close.index <= d).sum())
+                if hist < bcfg.min_history or d not in ana.prob_up.index:
                     continue
-                p = float(fr["prob"].loc[d])
+                p = float(ana.prob_up.loc[d])
                 if np.isnan(p):
                     continue
                 probs[s] = p
@@ -229,22 +224,13 @@ def run_backtest(
         # 4) 收盘估值
         equity_pts.append(round(cash + market_value(d), 4))
 
-    # ---- 预测日志对账（close-to-close，FR-012 口径） ----
+    # ---- 预测日志对账（统一调用 StockAnalysis.evaluate_hit） ----
     for row in pred_rows:
-        s, as_of = row["symbol"], pd.Timestamp(row["as_of"])
-        c = frames[s]["close"]
-        pos = c.index.searchsorted(as_of, side="right")
-        if pos < len(c.index) and as_of in c.index:
-            ret = float(c.iloc[pos]) / float(c.loc[as_of]) - 1.0
-            row["actual_ret"] = round(ret, 6)
-            if row["direction"] == SignalDirection.UP:
-                row["hit"] = bool(ret > 0)
-            elif row["direction"] == SignalDirection.DOWN:
-                row["hit"] = bool(ret < 0)
-            else:
-                row["hit"] = None
-        else:
-            row["actual_ret"], row["hit"] = None, None
+        s, as_of = row["symbol"], row["as_of"]
+        ana = analyses[s]
+        ret, hit = ana.evaluate_hit(as_of, row["direction"])
+        row["actual_ret"] = ret
+        row["hit"] = hit
 
     equity = pd.Series(equity_pts, index=cal, name="equity")
     bench = None
@@ -277,5 +263,5 @@ def run_backtest(
 
     return BacktestReport(
         config=bcfg, equity_curve=equity, benchmark_curve=bench, trades=trades,
-        prediction_log=pred_df, metrics=m, symbols_used=list(frames.keys()),
+        prediction_log=pred_df, metrics=m, symbols_used=list(analyses.keys()),
     )
