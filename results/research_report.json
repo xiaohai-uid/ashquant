@@ -20,10 +20,10 @@
     "topk": 2,
     "volume_limit_ratio": 0.2
   },
-  "git_commit": "7506656275bd9600b24212352411e35c9e1b8285",
+  "git_commit": "4d4ad481d4bb69f360f363601eca2b6c44089ac1",
   "research_status": "EVALUATED_NOT_APPROVED",
   "schema_version": "1.0",
-  "snapshot_manifest_digest": "4b86a84eb9778b79a1d0aa73c14ca429980eabde16f1acd7817986b575ec82b7",
+  "snapshot_manifest_digest": "80ce732c8c8498c654f120d723f4b5e1ded1300e742f2e6d719b4a745b068427",
   "windows": {
     "test": {
       "benchmark_total_return": -0.094668,
