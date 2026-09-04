@@ -9,7 +9,7 @@ def test_backtest_performance_sla():
     """回测性能 SLA 基准门禁（对标 Qlib 性能回归测试）：
 
     防退化断言：5只股票 250 个交易日的完整回测（含指标计算、Alpha因子、大师打分、
-    流动性冲击撮合与 Walk-Forward 概率校准）执行耗时须稳定在 3.5 秒内。
+    流动性冲击撮合与 Walk-Forward 概率校准）纯计算耗时须稳定在 1.0 秒内。
     """
     symbols = [f"60000{i}" for i in range(5)]
     data_map = {s: _make_dummy_ohlcv(250) for s in symbols}

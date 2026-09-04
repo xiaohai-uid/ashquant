@@ -76,6 +76,27 @@ def test_reconciliation_engine_pass():
     engine.assert_can_trade(report)
 
 
+def test_reconciliation_engine_real_paper_broker(tmp_path):
+    from ashquant import config as cfg_mod
+    from ashquant.paper import PaperBroker
+
+    cfg = cfg_mod.Config(data_dir=tmp_path)
+    paper = PaperBroker(cfg)
+    paper.init(cash=200000.0)
+
+    # 模拟真实买入一笔
+    paper.buy("600519", 100, price=10.0, prev_close=10.0)
+    expected_cash = paper.state["cash"]
+
+    engine = ReconciliationEngine()
+    # 柜台与真实 PaperBroker 账本完全一致
+    report = engine.reconcile(paper, broker_positions={"600519": 100}, broker_cash=expected_cash)
+    assert report.is_consistent
+    assert len(report.diffs) == 0
+    engine.assert_can_trade(report)
+
+
+
 def test_reconciliation_engine_detects_mismatch():
     class MockPaperBroker:
         def __init__(self):

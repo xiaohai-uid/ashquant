@@ -99,13 +99,12 @@ class MarketRules:
         返回: (status, fill_qty, fill_price, slippage_cost, note)
         """
         fill_qty = qty
-        if volume > 0 and self.volume_limit_ratio < 1.0:
+        if self.volume_limit_ratio < 1.0:
+            if volume <= 0:
+                # 停牌或无成交量时，限制开启下无法提供任何流动性，拒绝成交
+                return REJECTED, 0, open_price, 0.0, INSUFFICIENT_LIQUIDITY
             max_shares = int((volume * self.volume_limit_ratio) // 100) * 100
             if max_shares < 100:
-                # 若委托大于等于100股，但当日流动性限额不足1手，拒绝成交
-                if qty >= 100:
-                    return REJECTED, 0, open_price, 0.0, INSUFFICIENT_LIQUIDITY
-                # 若为零股清仓（qty < 100），但限额不足1手，按比例同样无法满足流动性
                 return REJECTED, 0, open_price, 0.0, INSUFFICIENT_LIQUIDITY
             fill_qty = min(qty, max_shares)
             if fill_qty <= 0:
@@ -158,8 +157,8 @@ class MarketRules:
             return FillResult(REJECTED, note="数量非法")
         if qty % 100 != 0:
             return FillResult(REJECTED, note=ODD_LOT)
-        side = self.price_side(symbol, is_st, trade_date, prev_close, open_price)
-        if side == "UP":
+        limit_side = self.price_side(symbol, is_st, trade_date, prev_close, open_price)
+        if limit_side == "UP":
             return FillResult(REJECTED, note=LIMIT_UP)
 
         status, fill_qty, fill_price, slippage_cost, note = self._apply_liquidity_and_slippage(

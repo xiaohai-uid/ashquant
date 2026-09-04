@@ -36,6 +36,11 @@ class PaperBroker:
 
     # ---------- 状态 ----------
 
+    @property
+    def state(self) -> dict:
+        """提供账户当前状态快照（对账及只读消费推荐）。"""
+        return self._load()
+
     def _load(self) -> dict:
         if not self.path.exists():
             raise PaperError("模拟账户未初始化；先运行 ashquant paper init")
@@ -49,16 +54,14 @@ class PaperBroker:
     def _rollover_date(self, st: dict, today: str) -> None:
         """跨交易日：按 A 股交易日历解锁前一交易日买入（T+1 可卖）。
 
-        若当前日期与上次记录日期之间跨越了至少一个交易日交收点，才解锁持仓。
-        即：周五买入，周六/周日不可卖出，直至周一交易日才解锁。
+        只要当前日期 cur_d 已达到或跨越 last_d 的下一个交易日交收点，持仓即完成交收解锁。
         """
         last_d_str = st.get("last_date")
         if last_d_str and last_d_str < today:
             last_d = date.fromisoformat(last_d_str)
             cur_d = date.fromisoformat(today)
-            # 仅当 cur_d 达到或超过 last_d 的下一个交易日，且 cur_d 本身为交易日时才解锁
             next_t_day = codes.next_trading_day(last_d)
-            if cur_d >= next_t_day and codes.is_trading_day(cur_d):
+            if cur_d >= next_t_day:
                 for p in st["positions"].values():
                     p["locked"] = 0
         st["last_date"] = today

@@ -47,10 +47,20 @@ class ReconciliationEngine:
     ) -> ReconciliationReport:
         diffs: list[ReconciliationDiff] = []
 
-        # 提取本地持仓与资金
+        # 提取本地持仓与资金（兼容 PaperBroker 实例、Mock 或直接状态字典）
         if hasattr(local_broker, "state") and isinstance(local_broker.state, dict):
             local_pos_map = local_broker.state.get("positions", {})
             local_cash = float(local_broker.state.get("cash", 0.0))
+        elif callable(getattr(local_broker, "_load", None)):
+            st = local_broker._load()
+            local_pos_map = st.get("positions", {})
+            local_cash = float(st.get("cash", 0.0))
+        elif callable(getattr(local_broker, "show", None)):
+            st = local_broker.show()
+            # show() 返回格式中的 positions 为 list[dict]
+            pos_list = st.get("positions", [])
+            local_pos_map = {p["symbol"]: p["shares"] for p in pos_list}
+            local_cash = float(st.get("cash", 0.0))
         elif hasattr(local_broker, "positions"):
             local_pos_map = local_broker.positions
             local_cash = float(getattr(local_broker, "cash", 0.0))

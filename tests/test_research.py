@@ -227,6 +227,30 @@ def test_evaluate_snapshot_hash_verification_and_tamper(tmp_path: Path):
         evaluate_snapshot(snap_dir, valid_windows, bcfg, git_commit)
 
 
+def test_evaluate_snapshot_path_traversal_protection(tmp_path: Path):
+    from ashquant.backtest import BacktestConfig
+    from ashquant.research import ResearchIntegrityError, ResearchWindow, evaluate_snapshot
+
+    snap_dir, _ = _prepare_snapshot_fixture(tmp_path)
+    bcfg = BacktestConfig(topk=1, rebalance_days=5, fee_enabled=False, initial_cash=100000.0)
+    git_commit = "d" * 40
+    valid_windows = [
+        ResearchWindow("train", "2023-01-01", "2023-04-01"),
+        ResearchWindow("validation", "2023-04-02", "2023-07-01"),
+        ResearchWindow("test", "2023-07-02", "2023-10-01"),
+    ]
+
+    # 在 manifest.json 中伪造路径穿越条目
+    manifest_file = snap_dir / "manifest.json"
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    manifest["files"]["../../outside.parquet"] = "dummy_hash"
+    manifest_file.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ResearchIntegrityError, match="[Pp]ath traversal"):
+        evaluate_snapshot(snap_dir, valid_windows, bcfg, git_commit)
+
+
+
 def test_evaluate_snapshot_success_and_determinism(tmp_path: Path):
     from ashquant.backtest import BacktestConfig
     from ashquant.research import (

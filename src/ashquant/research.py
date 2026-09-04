@@ -101,7 +101,9 @@ def evaluate_snapshot(
         raise ResearchIntegrityError("manifest.json missing valid 'files' map")
 
     for rel_path, expected_hash in files_map.items():
-        file_path = snap_path / rel_path
+        file_path = (snap_path / rel_path).resolve()
+        if not file_path.is_relative_to(snap_path.resolve()):
+            raise ResearchIntegrityError(f"Security error: path traversal detected in manifest: {rel_path}")
         if not file_path.exists():
             raise ResearchIntegrityError(f"File listed in manifest is missing from snapshot: {rel_path}")
         actual_hash = hashlib.sha256(file_path.read_bytes()).hexdigest()
