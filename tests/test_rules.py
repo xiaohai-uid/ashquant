@@ -116,3 +116,17 @@ def test_square_root_impact_slippage():
     assert round(res_sell.price, 4) == 9.80
     assert round(res_sell.slippage_cost, 2) == round(0.20 * 2500, 2)
 
+
+def test_odd_lot_liquidity_insufficient_rejected():
+    from ashquant.domain import MarketContext
+    rules = MarketRules(volume_limit_ratio=0.1)
+
+    # 持有 50 股零股清仓卖出，但当日成交量仅 400 股（10% 限额为 40 股，不足 1 手）
+    ctx = MarketContext(symbol="600519", trade_date="2024-01-02", price=10.0, prev_close=10.0, is_st=False, volume=400)
+    res_sell = rules.sell_context(ctx, qty=50, held_shares=50, sellable_shares=50)
+    # 应被正确拒绝为 INSUFFICIENT_LIQUIDITY，绝不可返回 FILLED(qty=0)
+    assert res_sell.status == REJECTED
+    assert res_sell.qty == 0
+    assert res_sell.note == "INSUFFICIENT_LIQUIDITY"
+
+

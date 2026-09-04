@@ -65,13 +65,20 @@ def limit_prices(prev_close: float, pct: float) -> tuple[float, float]:
 
 
 def is_trading_day(d: date | str) -> bool:
-    """粗判是否为交易日（排除周末）。"""
+    """粗判是否为交易日（排除周末）。
+
+    # ponytail: 当前简化为仅排除周六周日(weekday < 5)；上限为未剔除中国法定节假日与调休，
+    # 若需高精度 A 股交易日历，可升级接入 akshare.tool_trade_date_hist_sina 或专用日历包。
+    """
     dt = date.fromisoformat(d) if isinstance(d, str) else d
     return dt.weekday() < 5
 
 
 def next_trading_day(d: date | str) -> date:
-    """获取下一个交易日（跳过周末）。"""
+    """获取下一个交易日（跳过周末）。
+
+    # ponytail: 同样基于 weekday < 5 简易滚动；上限同 is_trading_day。
+    """
     dt = date.fromisoformat(d) if isinstance(d, str) else d
     cur = dt
     while True:

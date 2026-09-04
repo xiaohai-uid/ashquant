@@ -314,6 +314,8 @@ def compute_dynamic_qfq(df: pd.DataFrame, as_of: str | date | None = None) -> pd
     if "volume" in out.columns:
         out["volume"] = out["volume"] / ratio
 
+    # 动态前复权换算完成后剔除 adj_factor 列，防止下游流水线（如 analyze_stock）重复二次折算
+    out = out.drop(columns=["adj_factor"])
     return out
 
 

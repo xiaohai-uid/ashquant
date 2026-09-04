@@ -81,6 +81,52 @@ class MarketRules:
             return "DOWN"
         return None
 
+    # ---------- 撮合内部算子 ----------
+
+    def _apply_liquidity_and_slippage(
+        self,
+        side: OrderSide,
+        symbol: str,
+        is_st: bool,
+        trade_date: date | str,
+        open_price: float,
+        prev_close: float,
+        qty: int,
+        volume: float,
+    ) -> tuple[FillStatus | str, int, float, float, str]:
+        """统一处理成交量上限截断与平方根冲击滑点（对标 Qlib / RQAlpha）。
+
+        返回: (status, fill_qty, fill_price, slippage_cost, note)
+        """
+        fill_qty = qty
+        if volume > 0 and self.volume_limit_ratio < 1.0:
+            max_shares = int((volume * self.volume_limit_ratio) // 100) * 100
+            if max_shares < 100:
+                # 若委托大于等于100股，但当日流动性限额不足1手，拒绝成交
+                if qty >= 100:
+                    return REJECTED, 0, open_price, 0.0, INSUFFICIENT_LIQUIDITY
+                # 若为零股清仓（qty < 100），但限额不足1手，按比例同样无法满足流动性
+                return REJECTED, 0, open_price, 0.0, INSUFFICIENT_LIQUIDITY
+            fill_qty = min(qty, max_shares)
+            if fill_qty <= 0:
+                return REJECTED, 0, open_price, 0.0, INSUFFICIENT_LIQUIDITY
+
+        fill_price = open_price
+        slippage_cost = 0.0
+        if self.impact_coef > 0 and volume > 0 and fill_qty > 0:
+            pct = codes.limit_pct(symbol, is_st, trade_date)
+            up_limit, down_limit = codes.limit_prices(prev_close, pct)
+            impact_rate = self.impact_coef * math.sqrt(fill_qty / volume)
+            delta_p = open_price * impact_rate
+            if side == OrderSide.BUY:
+                fill_price = min(open_price + delta_p, up_limit)
+                slippage_cost = round((fill_price - open_price) * fill_qty, 2)
+            else:
+                fill_price = max(open_price - delta_p, down_limit)
+                slippage_cost = round((open_price - fill_price) * fill_qty, 2)
+
+        return FILLED, fill_qty, fill_price, slippage_cost, "ok"
+
     # ---------- 撮合 ----------
 
     def buy_context(self, ctx: MarketContext, qty: int, cash: float) -> FillResult:
@@ -116,24 +162,18 @@ class MarketRules:
         if side == "UP":
             return FillResult(REJECTED, note=LIMIT_UP)
 
-        # 1. 成交量流动性上限截断 (Volume Participation Limit)
-        fill_qty = qty
-        if volume > 0 and self.volume_limit_ratio < 1.0:
-            max_shares = int((volume * self.volume_limit_ratio) // 100) * 100
-            if max_shares < 100:
-                return FillResult(REJECTED, note=INSUFFICIENT_LIQUIDITY)
-            fill_qty = min(qty, max_shares)
-
-        # 2. 动态平方根冲击成本滑点 (Square-Root Impact Slippage)
-        fill_price = open_price
-        slippage_cost = 0.0
-        if self.impact_coef > 0 and volume > 0 and fill_qty > 0:
-            pct = codes.limit_pct(symbol, is_st, trade_date)
-            up_limit, _ = codes.limit_prices(prev_close, pct)
-            impact_rate = self.impact_coef * math.sqrt(fill_qty / volume)
-            delta_p = open_price * impact_rate
-            fill_price = min(open_price + delta_p, up_limit)
-            slippage_cost = round((fill_price - open_price) * fill_qty, 2)
+        status, fill_qty, fill_price, slippage_cost, note = self._apply_liquidity_and_slippage(
+            side=OrderSide.BUY,
+            symbol=symbol,
+            is_st=is_st,
+            trade_date=trade_date,
+            open_price=open_price,
+            prev_close=prev_close,
+            qty=qty,
+            volume=volume,
+        )
+        if status != FILLED:
+            return FillResult(status, note=note)
 
         amount = round(fill_price * fill_qty, 2)
         fee = self.total_fees(OrderSide.BUY, amount)
@@ -192,24 +232,18 @@ class MarketRules:
         if side == "DOWN":
             return FillResult(DEFERRED, note=LIMIT_DOWN)
 
-        # 1. 成交量流动性上限截断 (Volume Participation Limit)
-        fill_qty = qty
-        if volume > 0 and self.volume_limit_ratio < 1.0:
-            max_shares = int((volume * self.volume_limit_ratio) // 100) * 100
-            if max_shares < 100 and held_shares >= 100:
-                return FillResult(REJECTED, note=INSUFFICIENT_LIQUIDITY)
-            fill_qty = min(qty, max_shares)
-
-        # 2. 动态平方根冲击成本滑点 (Square-Root Impact Slippage)
-        fill_price = open_price
-        slippage_cost = 0.0
-        if self.impact_coef > 0 and volume > 0 and fill_qty > 0:
-            pct = codes.limit_pct(symbol, is_st, trade_date)
-            _, down_limit = codes.limit_prices(prev_close, pct)
-            impact_rate = self.impact_coef * math.sqrt(fill_qty / volume)
-            delta_p = open_price * impact_rate
-            fill_price = max(open_price - delta_p, down_limit)
-            slippage_cost = round((open_price - fill_price) * fill_qty, 2)
+        status, fill_qty, fill_price, slippage_cost, note = self._apply_liquidity_and_slippage(
+            side=OrderSide.SELL,
+            symbol=symbol,
+            is_st=is_st,
+            trade_date=trade_date,
+            open_price=open_price,
+            prev_close=prev_close,
+            qty=qty,
+            volume=volume,
+        )
+        if status != FILLED:
+            return FillResult(status, note=note)
 
         amount = round(fill_price * fill_qty, 2)
         return FillResult(

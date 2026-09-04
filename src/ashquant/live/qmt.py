@@ -83,8 +83,6 @@ class QmtAdapter:
     def __init__(self, callback: QmtEventCallback | None = None):
         self._api = None
         self.callback = callback or QmtEventCallback()
-        self._worker_thread: threading.Thread | None = None
-        self._running = False
 
     def connect(self):
         if os.environ.get("ASHQUANT_QMT_PATH") is None:

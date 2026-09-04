@@ -1,8 +1,8 @@
 {
   "smoke_status": "PASSED",
-  "git_commit": "9046aad90560ecd0e0f07c128f4f5108b37b162d",
+  "git_commit": "0d413e44084945d50c5f146810e9e0ca2cfb3cfb",
   "research_status": "EVALUATED_NOT_APPROVED",
-  "snapshot_manifest_digest": "d2c86f1f35483d77fb1508a42ee67e4bedd64f1c34062c548a88e09b0cbd59f1",
+  "snapshot_manifest_digest": "372e4d9152a6a67cd913135634529d52e2919af0bbadc5e643395d458c0fba48",
   "windows": {
     "train": {
       "benchmark_total_return": 0.033071,

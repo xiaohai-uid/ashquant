@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from ashquant.data.store import BarStore, compute_dynamic_qfq
@@ -70,3 +71,29 @@ def test_bar_store_load_bars_with_adjust(tmp_path: Path):
     df_raw = store.load_bars("600519", adjust="raw")
     assert df_raw is not None
     assert df_raw["close"].iloc[0] == 100.0
+
+
+def test_analyze_stock_prevents_double_qfq():
+    from ashquant.strategy import analyze_stock
+
+    dates = pd.date_range("2024-01-01", periods=60, freq="B")
+    # 模拟包含 adj_factor 的日线
+    close = np.linspace(100, 200, 60)
+    df = pd.DataFrame(
+        {
+            "open": close,
+            "high": close + 1.0,
+            "low": close - 1.0,
+            "close": close,
+            "volume": np.full(60, 10000.0),
+            "adj_factor": np.full(60, 2.0),
+        },
+        index=dates,
+    )
+
+    # analyze_stock 传入带有 adj_factor 的 bars 时，指标计算应只执行一次 QFQ，不可二次折算
+    analysis = analyze_stock("600519", df, flow_loader=lambda _: None)
+    assert analysis is not None
+    # 最终 close 序列应保持原始或单次换算一致性，绝不应发生 (ratio)^2 错误
+    assert np.isclose(analysis.close.iloc[-1], 200.0)
+
