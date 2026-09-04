@@ -20,39 +20,39 @@
     "topk": 2,
     "volume_limit_ratio": 0.2
   },
-  "git_commit": "1f5821d9077f63dcf5cd1e9926893a482445b17c",
+  "git_commit": "9046aad90560ecd0e0f07c128f4f5108b37b162d",
   "research_status": "EVALUATED_NOT_APPROVED",
   "schema_version": "1.0",
-  "snapshot_manifest_digest": "51f76aa6396ec929217c476edc369dafa31b1b6c3e2e2bc4e63e5de327545874",
+  "snapshot_manifest_digest": "d2c86f1f35483d77fb1508a42ee67e4bedd64f1c34062c548a88e09b0cbd59f1",
   "windows": {
     "test": {
       "benchmark_total_return": -0.094668,
       "end": "2024-03-31",
       "metrics": {
-        "annual_return": -0.053353,
+        "annual_return": -0.056763,
         "calibration": [
           {
-            "actual_up_rate": 0.381,
-            "avg_prob": 0.5813,
+            "actual_up_rate": 0.4348,
+            "avg_prob": 0.5789,
             "bucket": "[0.55,0.65)",
-            "n": 21
+            "n": 23
           }
         ],
         "cost_sensitivity": {
-          "fee_drag": 0.00018,
-          "with_fee_total_ret": -0.027889,
-          "zero_fee_total_ret": -0.027709
+          "fee_drag": 0.000166,
+          "with_fee_total_ret": -0.029697,
+          "zero_fee_total_ret": -0.029531
         },
-        "coverage": 0.4423,
-        "directional": 23,
-        "down_hit": 0.5333,
-        "hit_rate": 0.4348,
-        "max_drawdown": -0.028654,
+        "coverage": 0.4808,
+        "directional": 25,
+        "down_hit": 0.5,
+        "hit_rate": 0.44,
+        "max_drawdown": -0.032127,
         "n_days": 130,
         "pred_total": 52,
-        "sharpe": -2.6474,
-        "total_return": -0.027889,
-        "up_hit": 0.25,
+        "sharpe": -2.6231,
+        "total_return": -0.029697,
+        "up_hit": 0.3333,
         "win_rate": 0.0
       },
       "prediction_log_rows": 52,
@@ -100,23 +100,23 @@
       "benchmark_total_return": 0.106751,
       "end": "2023-09-30",
       "metrics": {
-        "annual_return": 0.033004,
+        "annual_return": 0.046332,
         "calibration": [],
         "cost_sensitivity": {
-          "fee_drag": 0.000458,
-          "with_fee_total_ret": 0.011273,
-          "zero_fee_total_ret": 0.011731
+          "fee_drag": 0.000461,
+          "with_fee_total_ret": 0.015759,
+          "zero_fee_total_ret": 0.01622
         },
-        "coverage": 0.25,
-        "directional": 8,
+        "coverage": 0.2812,
+        "directional": 9,
         "down_hit": 0.75,
-        "hit_rate": 0.5,
-        "max_drawdown": -0.016688,
+        "hit_rate": 0.4444,
+        "max_drawdown": -0.014525,
         "n_days": 87,
         "pred_total": 32,
-        "sharpe": 0.5294,
-        "total_return": 0.011273,
-        "up_hit": 0.25,
+        "sharpe": 0.8741,
+        "total_return": 0.015759,
+        "up_hit": 0.2,
         "win_rate": 0.5
       },
       "prediction_log_rows": 32,

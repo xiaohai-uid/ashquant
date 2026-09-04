@@ -164,7 +164,7 @@ def run_smoke() -> dict:
             "snapshot_manifest_digest": report1["snapshot_manifest_digest"],
             "windows": {k: {"benchmark_total_return": v["benchmark_total_return"], "trades_count": v["trades_count"]} for k, v in report1["windows"].items()},
             "artifacts": [
-                str(final_report_path.relative_to(repo_root)),
+                final_report_path.relative_to(repo_root).as_posix(),
             ],
         }
 

@@ -64,6 +64,22 @@ def limit_prices(prev_close: float, pct: float) -> tuple[float, float]:
     return up, down
 
 
+def is_trading_day(d: date | str) -> bool:
+    """粗判是否为交易日（排除周末）。"""
+    dt = date.fromisoformat(d) if isinstance(d, str) else d
+    return dt.weekday() < 5
+
+
+def next_trading_day(d: date | str) -> date:
+    """获取下一个交易日（跳过周末）。"""
+    dt = date.fromisoformat(d) if isinstance(d, str) else d
+    cur = dt
+    while True:
+        cur = date.fromordinal(cur.toordinal() + 1)
+        if cur.weekday() < 5:
+            return cur
+
+
 def is_st_name(name: str) -> bool:
     """按名称粗判 ST（回测的历史 ST 状态不可得时的保守开关；见 plan 局限说明）。"""
     n = (name or "").upper().replace(" ", "")

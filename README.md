@@ -28,10 +28,10 @@
 - 🧠 **投资大师信号代理**：将巴菲特（情绪逆向）、芒格（低波等待）、格雷厄姆（安全边际/超卖回归）、利弗莫尔（趋势突破）、德鲁肯米勒（动量反身）的经典哲学编码为可计算的量化特征，输出附带可核验出处名言的独立分析报告。
 - ⚙️ **A股微观规则保真回测（对标 Qlib / RQAlpha）**：严格建模 **T+1、分板块涨跌停、流动性成交量限额（Volume Participation Limit）、平方根冲击成本滑点（Square-Root Impact Slippage）、涨停买不进、跌停卖不出顺延、佣金（万2.5最低5元）、印花税（卖0.05%）、过户费（双边0.001%）、整手买入**。
 - 🤖 **Multi-Agent 对抗辩论与强类型 Schema（对标 TradingAgents）**：内置双层辩论架构（100% 确定性离线规则机 + 在线大模型增强），引入 Pydantic 风格容错清洗器（自动清洗 `"None"` / `"N/A"` 等脏字符），支持结构化审计报告导出与空头一票否决权。
-- 🧊 **数据层动态复权因子（Qlib 风格）**：支持原始价（Raw）存储与动态前复权（QFQ）按截面折算，杜绝回测跨期数据被未来除权除息“污染”的潜在隐患。
+- 🧊 **数据层动态复权因子（Qlib 风格）**：底层存储支持原始价（Raw）存储与 `adj_factor` 累积复权因子列，`compute_dynamic_qfq` 支持按历史截面动态前复权换算，兼容标准 Parquet 结构与研究快照。
 - 🛡️ **MiniQMT 实盘工程化（对标 EasyXT）**：提供事件队列异步解耦回调（防止卡死 XtQuant C++ 消息循环）与盘前持仓资金对账防御状态机（Reconciliation Engine）。
 - 📊 **可审计预测日志**：回测与实时预测均生成逐日预测日志（严格采用 close-to-close 收益口径对账），提供真实命中率、覆盖率与分置信度校准表。
-- 💼 **安全模拟盘**：本地 JSONL 账本，严格遵循 T+1 资金与持仓锁定，支持对账单 CSV 导出。
+- 💼 **安全模拟盘**：本地 JSONL 账本，严格遵循 A 股交易日历 T+1 资金与持仓锁定，支持对账单 CSV 导出。
 - 🖥️ **双端形态**：功能完备的 Typer CLI 终端工具 + 基于 FastAPI 与 TradingView Lightweight Charts 的免构建 Web 控制台。
 
 ---
@@ -190,13 +190,15 @@ ashquant/
 │   │   └── metrics.py      # 收益/回撤/夏普/胜率/校准度统计
 │   ├── predict.py          # 实时预测与预测日志自动对账
 │   ├── paper.py            # 模拟交易账户与持仓账本
-│   ├── live/qmt.py         # QMT/miniQMT 实盘通道可选适配器
+│   ├── live/
+│   │   ├── qmt.py          # QMT/miniQMT 实盘通道异步事件队列适配器
+│   │   └── reconciliation.py # 盘前持仓资金对账防御引擎
 │   ├── quotes.py           # 实时快照封装
-│   ├── cli.py              # Typer CLI 终端入口
+│   ├── cli/                # Typer CLI 终端命令包 (data, analysis, trade, paper, research)
 │   └── web/                # FastAPI 后端与单文件 Lightweight Charts 页面
 ├── specs/                  # spec-kit 规范与一手调研报告
 │   └── research/           # GitHub Top10实证 / A股规则 / 99%可行性 / 大师言论库
-├── tests/                  # 7 组确定性单测（合成数据，不触网）
+├── tests/                  # 16 组全覆盖确定性单测（合成数据，不触网）
 └── pyproject.toml          # 打包与依赖配置
 ```
 

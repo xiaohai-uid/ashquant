@@ -36,8 +36,9 @@ def add_alpha_factors(df: pd.DataFrame, flow_df: pd.DataFrame | None = None) -> 
     res["alpha_pv_divergence"] = pv_div
 
     # 3. 布林带与波动率挤压突破 (Squeeze Breakout)
-    if "boll_mid" in res.columns and "atr" in res.columns:
-        bb_width = (res["boll_up"] - res["boll_dn"]) / (res["boll_mid"] + 1e-6)
+    if "boll_mid" in res.columns and ("atr14" in res.columns or "atr" in res.columns):
+        boll_dn_col = "boll_low" if "boll_low" in res.columns else "boll_dn"
+        bb_width = (res["boll_up"] - res[boll_dn_col]) / (res["boll_mid"] + 1e-6)
         is_breakout = (close > res["boll_up"]).astype(float)
         res["alpha_squeeze_breakout"] = np.clip(is_breakout * 0.8 - (bb_width > 0.15).astype(float) * 0.2, -1.0, 1.0)
     else:

@@ -49,3 +49,34 @@ def test_paper_broker_limit_up_rejected(tmp_path: Path):
     with pytest.raises(PaperError) as exc:
         broker.buy("600519", 100, price=11.00, prev_close=10.00)
     assert "LIMIT_UP" in str(exc.value)
+
+
+def test_paper_broker_t1_trading_day_lock(tmp_path: Path):
+    cfg = cfg_mod.Config(data_dir=tmp_path)
+    broker = PaperBroker(cfg)
+    broker.init(100_000.0)
+
+    # 1. 模拟周五买入 (2024-01-05 是周五)
+    st = broker._load()
+    st["last_date"] = "2024-01-05"
+    st["positions"]["600519"] = {
+        "shares": 100,
+        "cost_total": 1000.0,
+        "cost_price": 10.0,
+        "locked": 100,
+        "opened": "2024-01-05",
+    }
+    broker._save(st)
+
+    # 2. 周六尝试卖出 (2024-01-06 周六)：未达到交易日，严禁解锁
+    broker._rollover_date(st, "2024-01-06")
+    assert st["positions"]["600519"]["locked"] == 100
+
+    # 3. 周日尝试卖出 (2024-01-07 周日)：依然锁定
+    broker._rollover_date(st, "2024-01-07")
+    assert st["positions"]["600519"]["locked"] == 100
+
+    # 4. 下周一 (2024-01-08 周一)：交易日达到，成功解锁 T+1
+    broker._rollover_date(st, "2024-01-08")
+    assert st["positions"]["600519"]["locked"] == 0
+

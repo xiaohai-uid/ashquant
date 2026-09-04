@@ -40,3 +40,26 @@ def test_add_alpha_factors_causality():
     # 提取最后切片
     factors = extract_alpha_factors_at(alpha_df, -1)
     assert isinstance(factors.composite_alpha, float)
+
+
+def test_squeeze_breakout_not_dead_code():
+    from ashquant.indicators import add_indicators
+
+    # 生成包含指标的真实数据
+    dates = pd.date_range("2024-01-01", periods=60, freq="B")
+    close = np.linspace(10, 20, 60)
+    high = close + 0.5
+    low = close - 0.5
+    open_p = close
+    volume = np.full(60, 1e5)
+    df = pd.DataFrame({"open": open_p, "high": high, "low": low, "close": close, "volume": volume}, index=dates)
+
+    ind_df = add_indicators(df)
+    assert "atr14" in ind_df.columns
+    assert "boll_low" in ind_df.columns
+
+    alpha_df = add_alpha_factors(ind_df)
+    # 验证 squeeze_breakout 因子被真实计算，而不是全部为 0 死代码
+    squeeze_vals = alpha_df["alpha_squeeze_breakout"].dropna()
+    assert (squeeze_vals != 0.0).any()
+

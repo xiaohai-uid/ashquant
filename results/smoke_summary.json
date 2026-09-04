@@ -1,8 +1,8 @@
 {
   "smoke_status": "PASSED",
-  "git_commit": "1f5821d9077f63dcf5cd1e9926893a482445b17c",
+  "git_commit": "9046aad90560ecd0e0f07c128f4f5108b37b162d",
   "research_status": "EVALUATED_NOT_APPROVED",
-  "snapshot_manifest_digest": "51f76aa6396ec929217c476edc369dafa31b1b6c3e2e2bc4e63e5de327545874",
+  "snapshot_manifest_digest": "d2c86f1f35483d77fb1508a42ee67e4bedd64f1c34062c548a88e09b0cbd59f1",
   "windows": {
     "train": {
       "benchmark_total_return": 0.033071,
@@ -18,6 +18,6 @@
     }
   },
   "artifacts": [
-    "results\\research_report.json"
+    "results/research_report.json"
   ]
 }

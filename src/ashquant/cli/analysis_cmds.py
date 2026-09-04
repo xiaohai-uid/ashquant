@@ -271,7 +271,7 @@ def predict(
 
 @analysis_app.command("stats")
 def stats(
-    min_count: Annotated[int, typer.Option("--min-count", "-m", help="最少已到期样本数")] = 1,
+    min_count: Annotated[int, typer.Option("--min-count", "-m", help="最少已到期样本数")] = 10,
     data_dir: Annotated[str | None, typer.Option("--data-dir", help="数据目录")] = None,
     settle: Annotated[bool, typer.Option("--settle/--no-settle", help="先对账已到期预测")] = True,
     json_out: Annotated[bool, typer.Option("--json", help="以 JSON 输出")] = False,
