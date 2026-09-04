@@ -68,6 +68,12 @@ class MasterDebateArena:
 
         return self.debate_context(ctx)
 
+    def run_debate_schema(self, *args, **kwargs):
+        """执行辩论并返回强类型、可容错清洗的结构化 Schema 对象（对标 TradingAgents）。"""
+        from ashquant.debate.schemas import DebateVerdictSchema
+        verdict = self.run_debate(*args, **kwargs)
+        return DebateVerdictSchema.from_domain(verdict)
+
     def debate_context(self, ctx: DebateContext) -> DebateVerdict:
         """基于 DebateContext 值对象执行辩论。"""
         # 1. 提取形态标签与相关历史反思规则

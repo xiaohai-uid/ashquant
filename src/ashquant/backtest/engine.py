@@ -40,6 +40,8 @@ class BacktestConfig:
     calib_window: int = 250
     initial_cash: float = 1_000_000.0
     fee_enabled: bool = True
+    volume_limit_ratio: float = 1.0
+    impact_coef: float = 0.0
     master_weights: dict = field(default_factory=lambda: cfg_mod.StrategyConfig().master_weights)
 
 
@@ -77,7 +79,11 @@ def run_backtest(
     bcfg = bcfg or BacktestConfig()
     syms = sorted(set(symbols))
     st_symbols = st_symbols or set()
-    rules = MarketRules(fee_enabled=bcfg.fee_enabled)
+    rules = MarketRules(
+        fee_enabled=bcfg.fee_enabled,
+        volume_limit_ratio=bcfg.volume_limit_ratio,
+        impact_coef=bcfg.impact_coef,
+    )
     strat_w = bcfg.master_weights
 
     # ---- 预计算：通过 analyze_stock 深度模块统一计算 ----
@@ -143,20 +149,42 @@ def run_backtest(
             pending_sells.pop(s, None)
             return
         sellable = pos.shares if (pos.bought_date is None or pos.bought_date < d.date()) else 0
-        ctx = MarketContext(symbol=s, trade_date=d.date(), price=op,
-                            prev_close=float(pc) if pd.notna(pc) else op, is_st=s in st_symbols)
+        bar_vol = float(ana.bars.loc[d, "volume"]) if "volume" in ana.bars.columns and d in ana.bars.index else 0.0
+        ctx = MarketContext(
+            symbol=s,
+            trade_date=d.date(),
+            price=op,
+            prev_close=float(pc) if pd.notna(pc) else op,
+            is_st=s in st_symbols,
+            volume=bar_vol,
+        )
         res = rules.sell_context(ctx, qty=qty, held_shares=pos.shares, sellable_shares=sellable)
         if res.status == FILLED:
             amount = round(res.price * res.qty, 2)
             fee = sum(res.fees.values())
             cash_local_delta = round(amount - fee, 2)
-            pnl = cash_local_delta - pos.cost_total
+            cost_sold = pos.cost_total * (res.qty / pos.shares)
+            pnl = cash_local_delta - cost_sold
             cash += cash_local_delta
-            trades.append({"date": str(d.date()), "symbol": s, "side": OrderSide.SELL,
-                           "qty": res.qty, "price": res.price, "fees": res.fees,
-                           "note": "ok", "pnl": round(pnl, 2)})
-            positions.pop(s, None)
-            pending_sells.pop(s, None)
+            trades.append({
+                "date": str(d.date()),
+                "symbol": s,
+                "side": OrderSide.SELL,
+                "qty": res.qty,
+                "price": res.price,
+                "fees": res.fees,
+                "note": "ok",
+                "pnl": round(pnl, 2),
+                "slippage": res.slippage_cost,
+            })
+            if res.qty >= pos.shares:
+                positions.pop(s, None)
+                pending_sells.pop(s, None)
+            else:
+                rem_shares = pos.shares - res.qty
+                rem_cost = pos.cost_total - cost_sold
+                positions[s] = Position(shares=rem_shares, cost_total=round(rem_cost, 2), bought_date=pos.bought_date)
+                pending_sells[s] = rem_shares
         elif res.status == DEFERRED:
             pending_sells[s] = qty  # 跌停，次日再试
             trades.append({"date": str(d.date()), "symbol": s, "side": OrderSide.SELL,
@@ -181,8 +209,15 @@ def run_backtest(
                 qty = int((equity_est * w) / op / 100) * 100
                 if qty <= 0:
                     continue
-                ctx = MarketContext(symbol=s, trade_date=d.date(), price=op,
-                                    prev_close=float(pc) if pd.notna(pc) else op, is_st=s in st_symbols)
+                bar_vol = float(ana.bars.loc[d, "volume"]) if "volume" in ana.bars.columns and d in ana.bars.index else 0.0
+                ctx = MarketContext(
+                    symbol=s,
+                    trade_date=d.date(),
+                    price=op,
+                    prev_close=float(pc) if pd.notna(pc) else op,
+                    is_st=s in st_symbols,
+                    volume=bar_vol,
+                )
                 res = rules.buy_context(ctx, qty=qty, cash=cash)
                 if res.status == FILLED:
                     amount = round(res.price * res.qty, 2)
@@ -190,9 +225,17 @@ def run_backtest(
                     cash -= round(amount + fee, 2)
                     positions[s] = Position(shares=res.qty, cost_total=round(amount + fee, 2),
                                             bought_date=d.date())
-                    trades.append({"date": str(d.date()), "symbol": s, "side": OrderSide.BUY,
-                                   "qty": res.qty, "price": res.price, "fees": res.fees,
-                                   "note": "ok", "pnl": None})
+                    trades.append({
+                        "date": str(d.date()),
+                        "symbol": s,
+                        "side": OrderSide.BUY,
+                        "qty": res.qty,
+                        "price": res.price,
+                        "fees": res.fees,
+                        "note": "ok",
+                        "pnl": None,
+                        "slippage": res.slippage_cost,
+                    })
             pending_target = None
             pending_target_day = None
 

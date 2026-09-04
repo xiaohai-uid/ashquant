@@ -41,6 +41,7 @@ class RejectReason(StrEnum):
     ODD_LOT = "ODD_LOT"              # 零股/非整手限制
     INSUFFICIENT_CASH = "INSUFFICIENT_CASH"
     NO_POSITION = "NO_POSITION"
+    INSUFFICIENT_LIQUIDITY = "INSUFFICIENT_LIQUIDITY"  # 流动性不足 (成交量限制)
     REGIME_CIRCUIT_BREAKER = "REGIME_CIRCUIT_BREAKER"  # 极端行情漂移熔断
 
 
@@ -61,12 +62,13 @@ class MarketRegime(StrEnum):
 
 @dataclass(frozen=True)
 class MarketContext:
-    """市场环境值对象：封装标的、日期、现价、昨收价与 ST 状态，消除方法参数团。"""
+    """市场环境值对象：封装标的、日期、现价、昨收价、ST 状态与当日成交量。"""
     symbol: str
     trade_date: date | str
     price: float
     prev_close: float
     is_st: bool = False
+    volume: float = 0.0
 
     @property
     def trade_date_obj(self) -> date:

@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -26,6 +27,7 @@ T1_LOCK = RejectReason.T1_LOCK
 ODD_LOT = RejectReason.ODD_LOT
 INSUFFICIENT_CASH = RejectReason.INSUFFICIENT_CASH
 NO_POSITION = RejectReason.NO_POSITION
+INSUFFICIENT_LIQUIDITY = RejectReason.INSUFFICIENT_LIQUIDITY
 
 
 @dataclass(frozen=True)
@@ -35,12 +37,21 @@ class FillResult:
     qty: int = 0
     fees: dict = field(default_factory=dict)
     note: str = ""
+    slippage_cost: float = 0.0
 
 
 class MarketRules:
-    def __init__(self, fees: FeesConfig | None = None, fee_enabled: bool = True):
+    def __init__(
+        self,
+        fees: FeesConfig | None = None,
+        fee_enabled: bool = True,
+        volume_limit_ratio: float = 1.0,
+        impact_coef: float = 0.0,
+    ):
         self.fees_cfg = fees or FeesConfig()
         self.fee_enabled = fee_enabled
+        self.volume_limit_ratio = volume_limit_ratio
+        self.impact_coef = impact_coef
 
     # ---------- 费用 ----------
 
@@ -82,10 +93,20 @@ class MarketRules:
             prev_close=ctx.prev_close,
             qty=qty,
             cash=cash,
+            volume=ctx.volume,
         )
 
-    def buy(self, symbol: str, is_st: bool, trade_date: date | str,
-            open_price: float, prev_close: float, qty: int, cash: float) -> FillResult:
+    def buy(
+        self,
+        symbol: str,
+        is_st: bool,
+        trade_date: date | str,
+        open_price: float,
+        prev_close: float,
+        qty: int,
+        cash: float,
+        volume: float = 0.0,
+    ) -> FillResult:
         """经典位置参数下单接口（兼容现有回测/测试代码）。"""
         if qty is None or qty <= 0:
             return FillResult(REJECTED, note="数量非法")
@@ -94,15 +115,46 @@ class MarketRules:
         side = self.price_side(symbol, is_st, trade_date, prev_close, open_price)
         if side == "UP":
             return FillResult(REJECTED, note=LIMIT_UP)
-        amount = round(open_price * qty, 2)
+
+        # 1. 成交量流动性上限截断 (Volume Participation Limit)
+        fill_qty = qty
+        if volume > 0 and self.volume_limit_ratio < 1.0:
+            max_shares = int((volume * self.volume_limit_ratio) // 100) * 100
+            if max_shares < 100:
+                return FillResult(REJECTED, note=INSUFFICIENT_LIQUIDITY)
+            fill_qty = min(qty, max_shares)
+
+        # 2. 动态平方根冲击成本滑点 (Square-Root Impact Slippage)
+        fill_price = open_price
+        slippage_cost = 0.0
+        if self.impact_coef > 0 and volume > 0 and fill_qty > 0:
+            pct = codes.limit_pct(symbol, is_st, trade_date)
+            up_limit, _ = codes.limit_prices(prev_close, pct)
+            impact_rate = self.impact_coef * math.sqrt(fill_qty / volume)
+            delta_p = open_price * impact_rate
+            fill_price = min(open_price + delta_p, up_limit)
+            slippage_cost = round((fill_price - open_price) * fill_qty, 2)
+
+        amount = round(fill_price * fill_qty, 2)
         fee = self.total_fees(OrderSide.BUY, amount)
         if cash < amount + fee + 1e-9:
             return FillResult(REJECTED, note=INSUFFICIENT_CASH)
-        return FillResult(FILLED, price=open_price, qty=qty,
-                          fees=self.fees(OrderSide.BUY, amount), note="ok")
+        return FillResult(
+            FILLED,
+            price=fill_price,
+            qty=fill_qty,
+            fees=self.fees(OrderSide.BUY, amount),
+            note="ok",
+            slippage_cost=slippage_cost,
+        )
 
-    def sell_context(self, ctx: MarketContext, qty: int,
-                     held_shares: int, sellable_shares: int) -> FillResult:
+    def sell_context(
+        self,
+        ctx: MarketContext,
+        qty: int,
+        held_shares: int,
+        sellable_shares: int,
+    ) -> FillResult:
         """基于 MarketContext 值对象的标准卖出接口（推荐深度用法）。"""
         return self.sell(
             symbol=ctx.symbol,
@@ -113,11 +165,21 @@ class MarketRules:
             qty=qty,
             held_shares=held_shares,
             sellable_shares=sellable_shares,
+            volume=ctx.volume,
         )
 
-    def sell(self, symbol: str, is_st: bool, trade_date: date | str,
-             open_price: float, prev_close: float, qty: int,
-             held_shares: int, sellable_shares: int) -> FillResult:
+    def sell(
+        self,
+        symbol: str,
+        is_st: bool,
+        trade_date: date | str,
+        open_price: float,
+        prev_close: float,
+        qty: int,
+        held_shares: int,
+        sellable_shares: int,
+        volume: float = 0.0,
+    ) -> FillResult:
         """经典位置参数卖出接口（兼容现有回测/测试代码）。"""
         if qty is None or qty <= 0 or held_shares <= 0:
             return FillResult(REJECTED, note=NO_POSITION)
@@ -129,6 +191,32 @@ class MarketRules:
         side = self.price_side(symbol, is_st, trade_date, prev_close, open_price)
         if side == "DOWN":
             return FillResult(DEFERRED, note=LIMIT_DOWN)
-        amount = round(open_price * qty, 2)
-        return FillResult(FILLED, price=open_price, qty=qty,
-                          fees=self.fees(OrderSide.SELL, amount), note="ok")
+
+        # 1. 成交量流动性上限截断 (Volume Participation Limit)
+        fill_qty = qty
+        if volume > 0 and self.volume_limit_ratio < 1.0:
+            max_shares = int((volume * self.volume_limit_ratio) // 100) * 100
+            if max_shares < 100 and held_shares >= 100:
+                return FillResult(REJECTED, note=INSUFFICIENT_LIQUIDITY)
+            fill_qty = min(qty, max_shares)
+
+        # 2. 动态平方根冲击成本滑点 (Square-Root Impact Slippage)
+        fill_price = open_price
+        slippage_cost = 0.0
+        if self.impact_coef > 0 and volume > 0 and fill_qty > 0:
+            pct = codes.limit_pct(symbol, is_st, trade_date)
+            _, down_limit = codes.limit_prices(prev_close, pct)
+            impact_rate = self.impact_coef * math.sqrt(fill_qty / volume)
+            delta_p = open_price * impact_rate
+            fill_price = max(open_price - delta_p, down_limit)
+            slippage_cost = round((open_price - fill_price) * fill_qty, 2)
+
+        amount = round(fill_price * fill_qty, 2)
+        return FillResult(
+            FILLED,
+            price=fill_price,
+            qty=fill_qty,
+            fees=self.fees(OrderSide.SELL, amount),
+            note="ok",
+            slippage_cost=slippage_cost,
+        )

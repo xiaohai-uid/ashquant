@@ -70,11 +70,14 @@ class BarStore:
             json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8"
         )
 
-    def load_bars(self, symbol: str) -> pd.DataFrame | None:
+    def load_bars(self, symbol: str, adjust: str = "qfq") -> pd.DataFrame | None:
         p = self._path(str(symbol))
         if not p.exists():
             return None
-        return pd.read_parquet(p, engine="pyarrow")
+        df = pd.read_parquet(p, engine="pyarrow")
+        if adjust == "qfq":
+            return compute_dynamic_qfq(df)
+        return df
 
     def meta(self, symbol: str) -> dict | None:
         p = self._meta_path(str(symbol))
@@ -277,6 +280,41 @@ class BarStore:
             df = fetch_index_daily(index_code, start, "20991231")
             self.save_bars(INDEX_KEY, df, source=f"index_zh_a_hist({index_code})")
         return df
+
+
+def compute_dynamic_qfq(df: pd.DataFrame, as_of: str | date | None = None) -> pd.DataFrame:
+    """基于累积复权因子 (adj_factor) 动态计算前复权价格（对标 Qlib / RQAlpha 数据层）。
+
+    公式:
+        ratio = adj_factor(t) / adj_factor(as_of)
+        P_qfq(t) = P_raw(t) * ratio
+        V_qfq(t) = V_raw(t) / ratio
+    若输入数据无 adj_factor 列，则视为已静态复权或纯未复权数据，安全原样返回。
+    """
+    if df is None or df.empty or "adj_factor" not in df.columns:
+        return df.copy() if df is not None else None
+
+    out = df.copy()
+    adj_series = out["adj_factor"].astype(float)
+
+    if as_of is not None:
+        as_of_ts = pd.Timestamp(as_of)
+        sub = adj_series[adj_series.index <= as_of_ts]
+        base_factor = float(sub.iloc[-1]) if len(sub) > 0 else float(adj_series.iloc[-1])
+    else:
+        base_factor = float(adj_series.iloc[-1])
+
+    if base_factor <= 0 or np.isnan(base_factor):
+        return out
+
+    ratio = adj_series / base_factor
+    for col in ["open", "high", "low", "close"]:
+        if col in out.columns:
+            out[col] = out[col] * ratio
+    if "volume" in out.columns:
+        out["volume"] = out["volume"] / ratio
+
+    return out
 
 
 def resolve_pool(pool: str | None, symbols: list[str] | None) -> list[str]:

@@ -3,6 +3,7 @@
     "calib_window": 250,
     "end": null,
     "fee_enabled": true,
+    "impact_coef": 0.02,
     "initial_cash": 1000000.0,
     "master_weights": {
       "momentum": 1.0,
@@ -16,18 +17,19 @@
     "neutral_band": 0.05,
     "rebalance_days": 5,
     "start": null,
-    "topk": 2
+    "topk": 2,
+    "volume_limit_ratio": 0.2
   },
-  "git_commit": "d732a830d38073a94b9cc83ada08f94c3ef4c4aa",
+  "git_commit": "1f5821d9077f63dcf5cd1e9926893a482445b17c",
   "research_status": "EVALUATED_NOT_APPROVED",
   "schema_version": "1.0",
-  "snapshot_manifest_digest": "9cb0a8c9cd6b9973a63c51a521c0da422ce1774ef026e491c95b0c59168c1ee8",
+  "snapshot_manifest_digest": "51f76aa6396ec929217c476edc369dafa31b1b6c3e2e2bc4e63e5de327545874",
   "windows": {
     "test": {
       "benchmark_total_return": -0.094668,
       "end": "2024-03-31",
       "metrics": {
-        "annual_return": -0.052835,
+        "annual_return": -0.053353,
         "calibration": [
           {
             "actual_up_rate": 0.381,
@@ -38,18 +40,18 @@
         ],
         "cost_sensitivity": {
           "fee_drag": 0.00018,
-          "with_fee_total_ret": -0.027614,
-          "zero_fee_total_ret": -0.027434
+          "with_fee_total_ret": -0.027889,
+          "zero_fee_total_ret": -0.027709
         },
         "coverage": 0.4423,
         "directional": 23,
         "down_hit": 0.5333,
         "hit_rate": 0.4348,
-        "max_drawdown": -0.028514,
+        "max_drawdown": -0.028654,
         "n_days": 130,
         "pred_total": 52,
-        "sharpe": -2.6299,
-        "total_return": -0.027614,
+        "sharpe": -2.6474,
+        "total_return": -0.027889,
         "up_hit": 0.25,
         "win_rate": 0.0
       },
@@ -98,22 +100,22 @@
       "benchmark_total_return": 0.106751,
       "end": "2023-09-30",
       "metrics": {
-        "annual_return": 0.036251,
+        "annual_return": 0.033004,
         "calibration": [],
         "cost_sensitivity": {
-          "fee_drag": 0.000457,
-          "with_fee_total_ret": 0.01237,
-          "zero_fee_total_ret": 0.012827
+          "fee_drag": 0.000458,
+          "with_fee_total_ret": 0.011273,
+          "zero_fee_total_ret": 0.011731
         },
         "coverage": 0.25,
         "directional": 8,
         "down_hit": 0.75,
         "hit_rate": 0.5,
-        "max_drawdown": -0.015833,
+        "max_drawdown": -0.016688,
         "n_days": 87,
         "pred_total": 32,
-        "sharpe": 0.6253,
-        "total_return": 0.01237,
+        "sharpe": 0.5294,
+        "total_return": 0.011273,
         "up_hit": 0.25,
         "win_rate": 0.5
       },

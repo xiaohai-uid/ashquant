@@ -75,3 +75,44 @@ def test_market_context_deep_interface():
 
     res_sell = rules.sell_context(ctx, qty=100, held_shares=100, sellable_shares=100)
     assert res_sell.status == FILLED
+
+
+def test_volume_limit_truncation():
+    from ashquant.domain import MarketContext
+    # 限制单笔/单日最多吸收 10% 流动性
+    rules = MarketRules(volume_limit_ratio=0.1)
+
+    # 1. 当日总成交量 1000 股，10% 对应 100 股。若委托 500 股，应截断为 100 股成交
+    ctx = MarketContext(symbol="600519", trade_date="2024-01-02", price=10.0, prev_close=10.0, is_st=False, volume=1000)
+    res_buy = rules.buy_context(ctx, qty=500, cash=50000.0)
+    assert res_buy.status == FILLED
+    assert res_buy.qty == 100
+
+    # 2. 当日总成交量 500 股，10% 对应 50 股，不足整手（100股），应拒绝
+    ctx_low = MarketContext(symbol="600519", trade_date="2024-01-02", price=10.0, prev_close=10.0, is_st=False, volume=500)
+    res_low = rules.buy_context(ctx_low, qty=100, cash=50000.0)
+    assert res_low.status == REJECTED
+    assert res_low.qty == 0
+
+
+def test_square_root_impact_slippage():
+    from ashquant.domain import MarketContext
+    # 启用平方根冲击滑点：impact_coef = 0.04
+    rules = MarketRules(impact_coef=0.04)
+
+    # volume = 10000, qty = 2500 -> sqrt(2500 / 10000) = 0.5
+    # delta_p = 10.0 * 0.04 * 0.5 = 0.20
+    ctx = MarketContext(symbol="600519", trade_date="2024-01-02", price=10.0, prev_close=10.0, is_st=False, volume=10000)
+
+    # 买入：价格上浮 0.20，成交价 10.20
+    res_buy = rules.buy_context(ctx, qty=2500, cash=50000.0)
+    assert res_buy.status == FILLED
+    assert round(res_buy.price, 4) == 10.20
+    assert round(res_buy.slippage_cost, 2) == round(0.20 * 2500, 2)
+
+    # 卖出：价格下浮 0.20，成交价 9.80
+    res_sell = rules.sell_context(ctx, qty=2500, held_shares=2500, sellable_shares=2500)
+    assert res_sell.status == FILLED
+    assert round(res_sell.price, 4) == 9.80
+    assert round(res_sell.slippage_cost, 2) == round(0.20 * 2500, 2)
+

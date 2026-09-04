@@ -151,7 +151,13 @@ def analyze_stock(
     多空对抗辩论裁决与 Walk-forward 概率校准。
     """
     master_weights = master_weights or _default_weights()
-    ind = add_indicators(bars)
+    # 动态前复权处理（若底层数据包含累积复权因子 adj_factor，动态折算后送入指标流）
+    if "adj_factor" in bars.columns:
+        from ashquant.data.store import compute_dynamic_qfq
+        calc_bars = compute_dynamic_qfq(bars)
+    else:
+        calc_bars = bars
+    ind = add_indicators(calc_bars)
 
     # 1. 对齐主力资金流并计算 Alpha 因子
     if flow_loader is not None:

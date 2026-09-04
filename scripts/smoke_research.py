@@ -106,7 +106,15 @@ def run_smoke() -> dict:
             ResearchWindow("validation", "2023-06-01", "2023-09-30"),
             ResearchWindow("test", "2023-10-01", "2024-03-31"),
         ]
-        bcfg = BacktestConfig(topk=2, rebalance_days=5, fee_enabled=True, initial_cash=1000000.0)
+        # 启用 A 股微观流动性冲击滑点与成交量上限（对标 Qlib / RQAlpha）
+        bcfg = BacktestConfig(
+            topk=2,
+            rebalance_days=5,
+            fee_enabled=True,
+            volume_limit_ratio=0.20,
+            impact_coef=0.02,
+            initial_cash=1000000.0,
+        )
 
         import subprocess
         git_res = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True)

@@ -55,3 +55,31 @@ def test_run_backtest_custom_flow_loader():
     assert rpt is not None
     assert "600519" in flows_loaded
 
+
+def test_backtest_volume_limit_and_impact_slippage():
+    df1 = _make_dummy_ohlcv(200)
+    data_map = {"600519": df1}
+
+    def loader(s):
+        return data_map.get(s)
+
+    # 1. 默认回测（0 滑点，无限制）
+    bcfg_base = BacktestConfig(topk=1, rebalance_days=5, fee_enabled=True, initial_cash=100000.0)
+    rpt_base = run_backtest(["600519"], loader=loader, bcfg=bcfg_base)
+
+    # 2. 引入流动性冲击滑点与成交量上限
+    bcfg_impact = BacktestConfig(
+        topk=1, rebalance_days=5, fee_enabled=True, initial_cash=100000.0,
+        volume_limit_ratio=0.10, impact_coef=0.03
+    )
+    rpt_impact = run_backtest(["600519"], loader=loader, bcfg=bcfg_impact)
+
+    assert rpt_impact is not None
+    assert len(rpt_impact.trades) > 0
+    # 验证交易记录中存在 slippage 记录
+    slippage_records = [t.get("slippage", 0.0) for t in rpt_impact.trades]
+    assert any(s > 0 for s in slippage_records)
+    # 相比理想 0 滑点，考虑微观冲击成本后的净值曲线应更贴近真实或收益受冲击消耗
+    assert rpt_impact.metrics["total_return"] != rpt_base.metrics["total_return"]
+
+
