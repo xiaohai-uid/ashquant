@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import dataclasses
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -70,6 +71,8 @@ def run_backtest(
     benchmark_df: pd.DataFrame | None = None,
     st_symbols: set[str] | None = None,
     compute_cost_sensitivity: bool = True,
+    *,
+    flow_loader: Callable[[str], pd.DataFrame | None] | None = None,
 ) -> BacktestReport:
     bcfg = bcfg or BacktestConfig()
     syms = sorted(set(symbols))
@@ -90,6 +93,7 @@ def run_backtest(
             calib_window=bcfg.calib_window,
             min_samples=max(60, bcfg.min_history // 2),
             refit_every=bcfg.rebalance_days,
+            flow_loader=flow_loader,
         )
 
     if not analyses:
@@ -250,6 +254,7 @@ def run_backtest(
             symbols=symbols, loader=loader, bcfg=bcfg_nofee,
             benchmark_df=benchmark_df, st_symbols=st_symbols,
             compute_cost_sensitivity=False,
+            flow_loader=flow_loader,
         )
         zero_fee_ret = rpt_nofee.metrics["total_return"]
         with_fee_ret = m["total_return"]

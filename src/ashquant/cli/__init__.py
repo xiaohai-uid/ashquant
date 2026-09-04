@@ -15,6 +15,7 @@ from rich.console import Console
 from ashquant import __version__
 from ashquant.cli.analysis_cmds import analysis_app
 from ashquant.cli.data_cmds import data_app
+from ashquant.cli.research_cmds import research_app
 from ashquant.cli.trading_cmds import paper_app, trading_app
 
 app = typer.Typer(
@@ -28,6 +29,7 @@ app.add_typer(data_app, name="data")
 app.add_typer(analysis_app, name="analysis")
 app.add_typer(trading_app, name="trade")
 app.add_typer(paper_app, name="paper")
+app.add_typer(research_app, name="research")
 
 # 平铺快捷注册（保持原有 CLI 命令 100% 向后兼容）
 app.command(name="fetch", help=data_app.registered_commands[1].help)(data_app.registered_commands[1].callback)

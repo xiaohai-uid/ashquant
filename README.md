@@ -118,9 +118,48 @@ uv run ashquant web --port 8000
 | `paper sell` | `ashquant paper sell 600519 --qty 100` | 模拟卖出（T+1 锁定与跌停校验） |
 | `paper show` | `ashquant paper show` | 查看账户资产、持仓与浮动盈亏 |
 | `paper export`| `ashquant paper export -o trades.csv` | 导出模拟交易对账流水 |
+| `research snapshot` | `ashquant research snapshot --symbols 600519,000001 --data-dir ./data --out ./snapshots/s1` | 冻结研究输入并生成 SHA-256 清单 |
+| `research evaluate` | `ashquant research evaluate --snapshot ./snapshots/s1 ... --out report.json` | 确定性三阶段回测评估与版本审计报告 |
 | `web` | `ashquant web --port 8000` | 启动 Web 控制台（TradingView K线 + 预测） |
 
 > 所有命令均支持 `--json` 选项，方便第三方脚本与自动化工具调用。
+
+---
+
+## 🔬 可复现研究闸门（Reproducible Research Gate）
+
+为了防止策略过拟合、数据窥探与参数调优偏差，`ashquant` 提供了严格的「可复现研究闸门」机制，采用标准的 **`snapshot → evaluate`** 工作流：
+
+### 1. 冻结输入快照（Snapshot）
+从本地存储中提取指定标的日线、基准指数日线及已缓存资金流，生成包含全文件 SHA-256 签名的不可变快照目录：
+```bash
+uv run ashquant research snapshot \
+  --symbols 600519,000001 \
+  --data-dir ./data \
+  --out ./snapshots/snap_202401
+```
+快照过程严格禁止触网或生成合成数据，确保输入完全固化。
+
+### 2. 确定性三阶段评估（Evaluate）
+对快照进行校验，在三段互不重叠的时间窗口（训练集 `train`、验证集 `validation`、测试集 `test`）上运行完全相同配置的回测评估：
+```bash
+uv run ashquant research evaluate \
+  --snapshot ./snapshots/snap_202401 \
+  --train-start 2023-01-01 --train-end 2023-05-31 \
+  --validation-start 2023-06-01 --validation-end 2023-09-30 \
+  --test-start 2023-10-01 --test-end 2024-01-31 \
+  --out ./reports/research_report.json
+```
+- **完整性门禁**：读取数据前强校验全部文件 SHA-256 签名，篡改即拒绝。
+- **版本证据**：强制关联 40 位 `git rev-parse HEAD` 提交号。
+- **确定性保证**：无时间戳等随机因子，相同代码与快照多次运行产生完全一致的 JSON 报告。
+
+### ⚠️ 研究证据声明
+生成的评估报告中顶层固定标记：
+```json
+"research_status": "EVALUATED_NOT_APPROVED"
+```
+**明确声明**：`EVALUATED_NOT_APPROVED` 仅代表已完成标准三阶段回测验证的研究证据记录，**不代表策略已获准进入模拟盘或实盘，更不是任何形式的投资建议**。未经过进一步风险审查与实盘门禁批准前，严禁用于实际资产配置。
 
 ---
 

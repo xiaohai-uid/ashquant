@@ -1,0 +1,130 @@
+{
+  "config": {
+    "calib_window": 250,
+    "end": null,
+    "fee_enabled": true,
+    "initial_cash": 1000000.0,
+    "master_weights": {
+      "momentum": 1.0,
+      "reversion": 0.8,
+      "risk": 0.6,
+      "sentiment": 0.8,
+      "trend": 1.0
+    },
+    "max_weight": 0.2,
+    "min_history": 120,
+    "neutral_band": 0.05,
+    "rebalance_days": 5,
+    "start": null,
+    "topk": 2
+  },
+  "git_commit": "d732a830d38073a94b9cc83ada08f94c3ef4c4aa",
+  "research_status": "EVALUATED_NOT_APPROVED",
+  "schema_version": "1.0",
+  "snapshot_manifest_digest": "9cb0a8c9cd6b9973a63c51a521c0da422ce1774ef026e491c95b0c59168c1ee8",
+  "windows": {
+    "test": {
+      "benchmark_total_return": -0.094668,
+      "end": "2024-03-31",
+      "metrics": {
+        "annual_return": -0.052835,
+        "calibration": [
+          {
+            "actual_up_rate": 0.381,
+            "avg_prob": 0.5813,
+            "bucket": "[0.55,0.65)",
+            "n": 21
+          }
+        ],
+        "cost_sensitivity": {
+          "fee_drag": 0.00018,
+          "with_fee_total_ret": -0.027614,
+          "zero_fee_total_ret": -0.027434
+        },
+        "coverage": 0.4423,
+        "directional": 23,
+        "down_hit": 0.5333,
+        "hit_rate": 0.4348,
+        "max_drawdown": -0.028514,
+        "n_days": 130,
+        "pred_total": 52,
+        "sharpe": -2.6299,
+        "total_return": -0.027614,
+        "up_hit": 0.25,
+        "win_rate": 0.0
+      },
+      "prediction_log_rows": 52,
+      "start": "2023-10-01",
+      "symbols_used": [
+        "000001",
+        "600519"
+      ],
+      "trades_count": 2,
+      "window": "test"
+    },
+    "train": {
+      "benchmark_total_return": 0.033071,
+      "end": "2023-05-31",
+      "metrics": {
+        "annual_return": 0.0,
+        "calibration": [],
+        "cost_sensitivity": {
+          "fee_drag": 0.0,
+          "with_fee_total_ret": 0.0,
+          "zero_fee_total_ret": 0.0
+        },
+        "coverage": null,
+        "directional": 0,
+        "down_hit": null,
+        "hit_rate": null,
+        "max_drawdown": 0.0,
+        "n_days": 108,
+        "pred_total": 0,
+        "sharpe": 0.0,
+        "total_return": 0.0,
+        "up_hit": null,
+        "win_rate": null
+      },
+      "prediction_log_rows": 0,
+      "start": "2023-01-01",
+      "symbols_used": [
+        "000001",
+        "600519"
+      ],
+      "trades_count": 0,
+      "window": "train"
+    },
+    "validation": {
+      "benchmark_total_return": 0.106751,
+      "end": "2023-09-30",
+      "metrics": {
+        "annual_return": 0.036251,
+        "calibration": [],
+        "cost_sensitivity": {
+          "fee_drag": 0.000457,
+          "with_fee_total_ret": 0.01237,
+          "zero_fee_total_ret": 0.012827
+        },
+        "coverage": 0.25,
+        "directional": 8,
+        "down_hit": 0.75,
+        "hit_rate": 0.5,
+        "max_drawdown": -0.015833,
+        "n_days": 87,
+        "pred_total": 32,
+        "sharpe": 0.6253,
+        "total_return": 0.01237,
+        "up_hit": 0.25,
+        "win_rate": 0.5
+      },
+      "prediction_log_rows": 32,
+      "start": "2023-06-01",
+      "symbols_used": [
+        "000001",
+        "600519"
+      ],
+      "trades_count": 5,
+      "window": "validation"
+    }
+  }
+}

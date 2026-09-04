@@ -35,3 +35,23 @@ def test_engine_determinism_and_metrics():
     assert len(rpt1.prediction_log) > 0
     assert "prob_up" in rpt1.prediction_log.columns
     assert "hit" in rpt1.prediction_log.columns
+
+
+def test_run_backtest_custom_flow_loader():
+    df1 = _make_dummy_ohlcv(200)
+    data_map = {"600519": df1}
+
+    def loader(s):
+        return data_map.get(s)
+
+    flows_loaded = []
+
+    def dummy_flow(s):
+        flows_loaded.append(s)
+        return None
+
+    bcfg = BacktestConfig(topk=1, rebalance_days=5, fee_enabled=False, initial_cash=100000.0)
+    rpt = run_backtest(["600519"], loader=loader, bcfg=bcfg, flow_loader=dummy_flow)
+    assert rpt is not None
+    assert "600519" in flows_loaded
+

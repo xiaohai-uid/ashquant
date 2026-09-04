@@ -7,9 +7,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
+import shutil
 from datetime import date, datetime
 from pathlib import Path
 
@@ -115,6 +117,84 @@ class BarStore:
 
         # 离线/测试合成兜底
         return self._generate_synthetic_flow(clean_sym)
+
+    def load_cached_capital_flow(self, symbol: str) -> pd.DataFrame | None:
+        """仅从本地缓存加载资金流。若缓存不存在则返回 None，绝不触网或生成合成数据。"""
+        p = self._alt_path(symbol)
+        if p.exists():
+            try:
+                return pd.read_parquet(p)
+            except Exception as e:
+                logger.warning("读取资金流缓存失败 %s: %s", p, e)
+                return None
+        return None
+
+    def create_research_snapshot(self, symbols: list[str], destination: Path | str) -> dict:
+        """冻结研究输入：复制指定标的日线、基准指数日线、元数据及已缓存资金流，并生成 manifest.json。"""
+        dest = Path(destination)
+        if dest.exists():
+            raise FileExistsError(f"Snapshot destination directory already exists: {dest}")
+
+        sorted_symbols = sorted(set(symbols))
+
+        # 检查标的日线与基准指数必须存在
+        missing_stocks = [s for s in sorted_symbols if not self.has(s)]
+        if missing_stocks:
+            raise FileNotFoundError(f"Missing stock bar parquets for symbols: {missing_stocks}")
+        if not self.has(INDEX_KEY):
+            raise FileNotFoundError(f"Missing benchmark bar parquet: {INDEX_KEY}")
+
+        dest_bars = dest / "bars"
+        dest_alt = dest / "alternative"
+        dest_bars.mkdir(parents=True, exist_ok=False)
+        dest_alt.mkdir(parents=True, exist_ok=False)
+
+        files_hash: dict[str, str] = {}
+        absent_flow_symbols: list[str] = []
+
+        def _copy_and_hash(src_path: Path, dst_path: Path, rel_path: str):
+            shutil.copy2(src_path, dst_path)
+            h = hashlib.sha256(dst_path.read_bytes()).hexdigest()
+            files_hash[rel_path] = h
+
+        for s in sorted_symbols:
+            src_bar = self._path(s)
+            dst_bar = dest_bars / f"{s}.parquet"
+            _copy_and_hash(src_bar, dst_bar, f"bars/{s}.parquet")
+
+            src_meta = self._meta_path(s)
+            if src_meta.exists():
+                dst_meta = dest_bars / f"{s}.meta.json"
+                _copy_and_hash(src_meta, dst_meta, f"bars/{s}.meta.json")
+
+            src_flow = self._alt_path(s)
+            if src_flow.exists():
+                clean_sym = s.split(".")[0]
+                dst_flow = dest_alt / f"{clean_sym}_flow.parquet"
+                _copy_and_hash(src_flow, dst_flow, f"alternative/{clean_sym}_flow.parquet")
+            else:
+                absent_flow_symbols.append(s)
+
+        # 复制基准指数
+        src_bench = self._path(INDEX_KEY)
+        dst_bench = dest_bars / f"{INDEX_KEY}.parquet"
+        _copy_and_hash(src_bench, dst_bench, f"bars/{INDEX_KEY}.parquet")
+
+        src_bench_meta = self._meta_path(INDEX_KEY)
+        if src_bench_meta.exists():
+            dst_bench_meta = dest_bars / f"{INDEX_KEY}.meta.json"
+            _copy_and_hash(src_bench_meta, dst_bench_meta, f"bars/{INDEX_KEY}.meta.json")
+
+        manifest = {
+            "schema_version": "1.0",
+            "symbols": sorted_symbols,
+            "files": {k: files_hash[k] for k in sorted(files_hash.keys())},
+            "absent_flow_symbols": sorted(absent_flow_symbols),
+        }
+
+        manifest_path = dest / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+        return manifest
 
     def _fetch_from_akshare(self, clean_sym: str) -> pd.DataFrame | None:
         try:

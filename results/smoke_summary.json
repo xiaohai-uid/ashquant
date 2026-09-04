@@ -1,0 +1,23 @@
+{
+  "smoke_status": "PASSED",
+  "git_commit": "d732a830d38073a94b9cc83ada08f94c3ef4c4aa",
+  "research_status": "EVALUATED_NOT_APPROVED",
+  "snapshot_manifest_digest": "9cb0a8c9cd6b9973a63c51a521c0da422ce1774ef026e491c95b0c59168c1ee8",
+  "windows": {
+    "train": {
+      "benchmark_total_return": 0.033071,
+      "trades_count": 0
+    },
+    "validation": {
+      "benchmark_total_return": 0.106751,
+      "trades_count": 5
+    },
+    "test": {
+      "benchmark_total_return": -0.094668,
+      "trades_count": 2
+    }
+  },
+  "artifacts": [
+    "results\\research_report.json"
+  ]
+}

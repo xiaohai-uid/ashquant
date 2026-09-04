@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -141,6 +142,8 @@ def analyze_stock(
     min_samples: int = 60,
     refit_every: int = 5,
     include_debate: bool = True,
+    *,
+    flow_loader: Callable[[str], pd.DataFrame | None] | None = None,
 ) -> StockAnalysis:
     """全量分析流水线（Deep Module 核心）。
 
@@ -151,7 +154,10 @@ def analyze_stock(
     ind = add_indicators(bars)
 
     # 1. 对齐主力资金流并计算 Alpha 因子
-    flow_df = fetch_capital_flow(symbol)
+    if flow_loader is not None:
+        flow_df = flow_loader(symbol)
+    else:
+        flow_df = fetch_capital_flow(symbol)
     ind = add_alpha_factors(ind, flow_df)
 
     # 2. 计算 5 位大师打分
