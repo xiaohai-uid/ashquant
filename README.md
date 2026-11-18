@@ -43,7 +43,7 @@
 本项目支持 Python 3.12+，推荐使用 `uv` 进行极速安装：
 
 ```bash
-# 克隆或下载本仓库
+git clone https://github.com/xiaohai-uid/ashquant.git
 cd ashquant
 
 # 使用 uv 一键同步依赖与 Web 控制台
@@ -54,6 +54,12 @@ uv sync --extra web
 ```bash
 pip install -e ".[web]"
 ```
+
+### 先看一次离线研究
+
+[已有运行摘要](results/smoke_summary.json) 记录训练、验证和测试窗口，以及各窗口的成交数。[完整报告](results/research_report.json) 可用于核对细节。摘要中的 `PASSED` 指流程检查通过，策略评估状态单独保存在 `research_status`。
+
+要在新克隆的仓库里复现，运行 `uv run python scripts/smoke_research.py`。脚本使用本地样本并更新 `results/` 中的两份报告。
 
 ### 2. 运行单测
 
